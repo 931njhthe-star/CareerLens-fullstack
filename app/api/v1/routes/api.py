@@ -6,6 +6,7 @@ import time
 import tiktoken
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header, Query, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -249,7 +250,7 @@ async def start(body: EvaluationRequest, request: Request, uid: str = Depends(us
         existing = await db.select('evaluation_runs', user_id=f'eq.{uid}', idempotency_key=f'eq.{idempotency_key}', limit=1)
         if existing:
             if existing[0]['input_fingerprint'] != fingerprint: raise HTTPException(409, '같은 중복방지 키가 다른 입력에 사용되었습니다.')
-            return {'run_id': existing[0]['id'], 'status': existing[0]['status']}
+            return jsonable_encoder({'run_id': existing[0]['id'], 'status': existing[0]['status']})
     companies = await db.select('companies', id=f"eq.{posting['company_id']}", limit=1) if posting.get('company_id') else []
     finance = await financial_context(db, posting.get('company_id'), companies[0]['name'] if companies else '')
     # JSONB snapshots may contain UUID, date, datetime, or Decimal DB values.
@@ -279,7 +280,7 @@ async def evaluations(request: Request, uid: str = Depends(user), limit: int = Q
 async def evaluation(run_id: UUID, request: Request, uid: str = Depends(user)):
     db, _, _ = services(request)
     row = await owned(db, 'evaluation_runs', run_id, uid)
-    return {k: row.get(k) for k in ['id', 'status', 'current_stage', 'progress_percent', 'started_at', 'completed_at', 'failure_reason']}
+    return jsonable_encoder({k: row.get(k) for k in ['id', 'status', 'current_stage', 'progress_percent', 'started_at', 'completed_at', 'failure_reason']})
 
 
 @router.get('/evaluations/{run_id}/progress', tags=['evaluations'])
@@ -327,7 +328,7 @@ async def events(run_id: UUID, request: Request, uid: str = Depends(user), last_
             rows = await db.select('progress_events', run_id=f'eq.{run_id}', id=f'gt.{cursor}', order='id.asc', limit=100)
             for row in rows:
                 cursor = row['id']
-                yield f"id: {cursor}\nevent: progress\ndata: {json.dumps(row, ensure_ascii=False)}\n\n"
+                yield f"id: {cursor}\nevent: progress\ndata: {json.dumps(jsonable_encoder(row), ensure_ascii=False)}\n\n"
             run = await evaluation(run_id, request, uid)
             if run['status'] in ('completed', 'partial', 'failed', 'cancelled'):
                 if len(rows) == 100: continue
@@ -352,7 +353,7 @@ async def result(run_id: UUID, request: Request, uid: str = Depends(user)):
         code = item['evaluation_criteria']['criterion_code']
         detail = details.get(code, {})
         item.update({k: detail.get(k, default) for k, default in [('comparison_basis', ''), ('estimated', False), ('issues', [])]})
-    return {**rows[0], 'criteria': criteria, 'reports': [{k: r[k] for k in ['id','status','created_at']} for r in reports]}
+    return jsonable_encoder({**rows[0], 'criteria': criteria, 'reports': [{k: r[k] for k in ['id','status','created_at']} for r in reports]})
 
 
 async def report_owned(db, report_id, uid):
@@ -368,7 +369,7 @@ async def report_owned(db, report_id, uid):
 async def report(report_id: UUID, request: Request, uid: str = Depends(user)):
     db, _, _ = services(request)
     row = await report_owned(db, report_id, uid)
-    return {k: row.get(k) for k in ['id', 'status', 'report_text', 'created_at', 'completed_at']}
+    return jsonable_encoder({k: row.get(k) for k in ['id', 'status', 'report_text', 'created_at', 'completed_at']})
 
 
 @router.get('/reports/{report_id}/download', tags=['reports'])

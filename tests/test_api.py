@@ -1,5 +1,7 @@
 import asyncio
 import threading
+from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 from types import SimpleNamespace
 import pytest
@@ -177,5 +179,76 @@ def test_evaluation_progress_returns_owned_run_and_events_after_cursor():
         assert response.status_code == 200
         assert response.json()['run']['progress_percent'] == 42
         assert response.json()['events'] == [event]
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize('endpoint', ['result', 'status', 'report'])
+def test_saved_evaluation_responses_accept_postgres_types(endpoint):
+    uid = str(uuid4())
+    run_id, match_id, report_id = uuid4(), uuid4(), uuid4()
+    stamp = datetime(2026, 10, 12, 23, 54, 9, tzinfo=timezone.utc)
+    markdown = '# 평가 결과\n\n- 근거: Python과 SQL 경험\n'
+    match = {
+        'id': match_id, 'run_id': run_id, 'created_at': stamp,
+        'resume_completeness': Decimal('82.5'), 'job_fit': Decimal('75.25'),
+        'qualifications': Decimal('100'), 'practical_competitiveness': Decimal('80'),
+        'overall_score': Decimal('84.5'), 'overall_formula': {'weights': [Decimal('0.35')]},
+        'eligibility_status': 'met', 'validation_status': 'passed',
+    }
+
+    class FakeDB:
+        async def select(self, table, **params):
+            if table == 'evaluation_runs':
+                assert params['user_id'] == f'eq.{uid}'
+                return [{'id': run_id, 'status': 'completed', 'current_stage': 'completed',
+                         'progress_percent': Decimal('100'), 'started_at': stamp,
+                         'completed_at': stamp, 'failure_reason': None}]
+            if table == 'match_results':
+                return [match]
+            if table == 'criterion_results':
+                return [{'score': Decimal('75.25'), 'verdict': 'met', 'confidence': Decimal('0.6'),
+                         'reasoning_summary': '원문 근거 확인', 'improvement_suggestion': '',
+                         'evidence': [{'source': 'resume', 'quote': 'Python과 SQL 경험'}],
+                         'validation_status': 'passed',
+                         'evaluation_criteria': {'criterion_code': 'B1', 'weight': Decimal('0.45')}}]
+            assert table == 'analysis_reports'
+            return [{'id': report_id, 'match_result_id': match_id, 'status': 'completed',
+                     'created_at': stamp, 'completed_at': stamp, 'report_text': markdown,
+                     'report_data': {'criteria': {'B1': {'comparison_basis': '공고 원문'}}}}]
+
+    path = (f'/api/v1/evaluations/{run_id}/result' if endpoint == 'result' else
+            f'/api/v1/evaluations/{run_id}' if endpoint == 'status' else
+            f'/api/v1/reports/{report_id}')
+    app.dependency_overrides[user] = lambda: uid
+    try:
+        with TestClient(app) as client:
+            original_db = app.state.db
+            try:
+                app.state.db = FakeDB()
+                response = client.get(path)
+            finally:
+                app.state.db = original_db
+        assert response.status_code == 200
+        body = response.json()
+        if endpoint == 'result':
+            assert body['id'] == str(match_id)
+            assert body['run_id'] == str(run_id)
+            assert body['created_at'] == stamp.isoformat()
+            assert body['job_fit'] == 75.25
+            assert body['overall_formula']['weights'] == [0.35]
+            assert body['criteria'][0]['evaluation_criteria']['weight'] == 0.45
+            assert body['reports'][0]['id'] == str(report_id)
+            assert body['reports'][0]['created_at'] == stamp.isoformat()
+        elif endpoint == 'status':
+            assert body['id'] == str(run_id)
+            assert body['completed_at'] == stamp.isoformat()
+        else:
+            assert body['id'] == str(report_id)
+            assert body['created_at'] == stamp.isoformat()
+            assert body['completed_at'] == stamp.isoformat()
+            assert body['report_text'] == markdown
+        assert match['id'] == match_id
+        assert isinstance(match['created_at'], datetime)
     finally:
         app.dependency_overrides.clear()
