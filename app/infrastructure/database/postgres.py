@@ -213,6 +213,8 @@ class DB:
                 raise
             diagnostic = getattr(exc, 'diag', None)
             primary = getattr(diagnostic, 'message_primary', None)
+            if primary is None and isinstance(exc, TypeError):
+                primary = str(exc)
             logger.error(
                 'PostgreSQL query failed: error_type=%s sqlstate=%s message=%s',
                 type(exc).__name__,
