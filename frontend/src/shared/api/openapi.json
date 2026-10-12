@@ -1,0 +1,4278 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CareerLens API",
+    "version": "1.7.1",
+    "description": "CareerLens API supports guest resume uploads, public DB posting selection and real analysis. Guest content stays in a server-side temporary workspace for a fixed 30 minutes; only an allowlisted metadata/question/completion response is exposed. Login or signup is required to atomically claim a completed report into the account workspace. Original upload binaries are never persisted. Existing authenticated endpoints and the 70/20/10 evidence rubric are unchanged. CSRF and origin checks protect all mutations."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:5101/api/v1"
+    },
+    {
+      "url": "/api/v1",
+      "description": "Same-origin frontend proxy"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Public API health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace": {
+      "get": {
+        "summary": "Current authenticated user workspace",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete this user workspace and keep login",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/resume": {
+      "put": {
+        "summary": "Save reviewed resume; changed input clears report and answers",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/resume/upload": {
+      "post": {
+        "summary": "Extract TXT/PDF/DOCX in memory and save editable text",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Upload exceeds request size limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "At most 10 MiB; PDF at most 50 pages; extracted text at most 50,000 characters."
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/job": {
+      "put": {
+        "summary": "Save company, role and posting; changes clear report and answers",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/questions": {
+      "get": {
+        "summary": "Up to three optional evidence questions",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "questions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Question"
+                      }
+                    }
+                  },
+                  "required": [
+                    "questions"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analysis": {
+      "post": {
+        "summary": "Generate and persist local practice application report",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "report": {
+                      "$ref": "#/components/schemas/Report"
+                    }
+                  },
+                  "required": [
+                    "report"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resume/role changed during analysis or stale fingerprint; reload workspace and restart preparation. Error code preparation_stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisInput"
+              }
+            }
+          }
+        },
+        "description": "Legacy job analysis remains supported. In desired_role mode requires complete current preparation, analyzes internal role references, and omits job_matches."
+      }
+    },
+    "/example": {
+      "post": {
+        "summary": "Replace this user workspace with synthetic examples",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "summary": "Read the current session and initialize a CSRF token",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "description": "Public endpoint. Returns user=null for guests. Creates a signed anonymous session cookie if necessary. Provider enabled flags reflect this project configuration.",
+        "responses": {
+          "200": {
+            "description": "Current authenticated or anonymous session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "summary": "Create an email account and sign in",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "description": "An anonymous or authenticated session cookie and its CSRF token are required; call GET /auth/session first. When present, Origin must match PUBLIC_ORIGIN.",
+        "responses": {
+          "201": {
+            "description": "Account created; user is present and session/CSRF tokens are rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, email, name or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF token or disallowed Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Authentication attempt limit exceeded (30 requests per action and peer IP in 10 minutes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Sign in with an email and password",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "description": "An anonymous or authenticated session cookie and its CSRF token are required; call GET /auth/session first. When present, Origin must match PUBLIC_ORIGIN.",
+        "responses": {
+          "200": {
+            "description": "Signed in; user is present and session/CSRF tokens are rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON or email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Incorrect email or password, including OAuth-only accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF token or disallowed Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Authentication attempt limit exceeded (30 requests per action and peer IP in 10 minutes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Revoke the current session and return an anonymous session",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "description": "An anonymous or authenticated session cookie and its CSRF token are required; call GET /auth/session first. When present, Origin must match PUBLIC_ORIGIN.",
+        "responses": {
+          "200": {
+            "description": "Current server session revoked; user is null and csrf_token rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF token or disallowed Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "summary": "Request a password reset for a local email/password account",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "description": "An anonymous or authenticated session cookie and its CSRF token are required; call GET /auth/session first. When present, Origin must match PUBLIC_ORIGIN.",
+        "responses": {
+          "200": {
+            "description": "The same generic message is returned regardless of account existence, OAuth-only account status or delivery failure. Reset tokens are never returned in this API response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON or email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF token or disallowed Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Authentication attempt limit exceeded (30 requests per action and peer IP in 10 minutes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "summary": "Consume a reset token and replace the password",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "description": "An anonymous or authenticated session cookie and its CSRF token are required; call GET /auth/session first. When present, Origin must match PUBLIC_ORIGIN.",
+        "responses": {
+          "200": {
+            "description": "Password changed, all user sessions revoked, and a fresh anonymous session returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON/password or invalid, expired, already-used reset token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF token or disallowed Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Authentication attempt limit exceeded (30 requests per action and peer IP in 10 minutes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/oauth/{provider}": {
+      "get": {
+        "summary": "Begin a configured OAuth/OIDC login",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "description": "Navigate the browser to this endpoint. The signed session cookie stores OAuth state; retain it for the callback. Requires this project provider client ID/secret. No X-CSRF-Token header is used for this GET; provider state/nonce is validated on return.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google",
+                "github",
+                "linkedin"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to provider authorization; may set the session cookie",
+            "headers": {
+              "Location": {
+                "description": "Browser redirect destination.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Authentication attempt limit exceeded (30 requests per action and peer IP in 10 minutes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Provider is unconfigured or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/oauth/{provider}/callback": {
+      "get": {
+        "summary": "Validate the provider callback and establish the local session",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "description": "Provider-facing browser callback. Requires the cookie that initiated OAuth. Authlib validates OAuth state and, for OIDC, the signed ID token and nonce. Failure or cancellation also redirects to the frontend with an auth_error query parameter; no provider token is returned to the browser.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google",
+                "github",
+                "linkedin"
+              ]
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Authorization code on successful provider authorization."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Must match the value saved in the initiating session to complete login."
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Provider denial/error code instead of authorization code."
+          },
+          {
+            "name": "error_description",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to PUBLIC_ORIGIN/ after success; on failure redirect to PUBLIC_ORIGIN/?auth_error=... . Successful login rotates session and CSRF tokens.",
+            "headers": {
+              "Location": {
+                "description": "Browser redirect destination.",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/job-postings": {
+      "get": {
+        "summary": "Browse public examples plus own private manual postings",
+        "tags": [
+          "Job postings"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPostingList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Anonymous reads show examples only. Logged-in reads include own manual posts and bookmark status. saved=1 requires authentication. Facets include all visible postings independent of active filters. Literal case-insensitive q searches company, role, description and skills; other filters are exact, skill is case-insensitive. No external API calls.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "employment_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "experience_level",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "skill",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "saved",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ],
+              "default": "0"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 12
+            }
+          },
+          {
+            "name": "role_id",
+            "in": "query",
+            "description": "Desired-role ID from /career-roles. Filters stored posting titles using editable role aliases.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "description": "Literal job title filter, required for role_id=custom.",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create an owner-private manual posting",
+        "tags": [
+          "Job postings"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPostingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid CSRF token or request origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobPostingInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/job-postings/{posting_id}": {
+      "parameters": [
+        {
+          "name": "posting_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a visible posting",
+        "tags": [
+          "Job postings"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPostingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Replace own manual posting",
+        "tags": [
+          "Job postings"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPostingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid CSRF token or request origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobPostingInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete own manual posting and its bookmarks",
+        "tags": [
+          "Job postings"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPostingDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid CSRF token or request origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/job-postings/{posting_id}/bookmark": {
+      "parameters": [
+        {
+          "name": "posting_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Save a visible posting for the current account (idempotent)",
+        "tags": [
+          "Job postings"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPostingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid CSRF token or request origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Remove current account bookmark (idempotent)",
+        "tags": [
+          "Job postings"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPostingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid CSRF token or request origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/resume-examples": {
+      "get": {
+        "summary": "Twenty synthetic resume examples; metadata only",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ResumeExampleSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/resume-examples/{example_id}": {
+      "get": {
+        "summary": "Read a synthetic resume; applying it uses PUT /resume",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "example_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "resume-01"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "example": {
+                      "$ref": "#/components/schemas/ResumeExample"
+                    }
+                  },
+                  "required": [
+                    "example"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Example not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/job-matches": {
+      "get": {
+        "summary": "Match the current saved resume with visible catalog jobs",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job_matches": {
+                      "$ref": "#/components/schemas/CatalogMatching"
+                    }
+                  },
+                  "required": [
+                    "job_matches"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/career-roles": {
+      "get": {
+        "summary": "Public desired-role choices for browsing job postings",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CareerRole"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/career-target": {
+      "put": {
+        "summary": "Save desired role; clears company/job text and invalidates changed preparation",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CareerTargetInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preparation": {
+      "post": {
+        "summary": "Complete one ordered preparation stage for current resume and desired role",
+        "tags": [
+          "Workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Resume/role changed during analysis or stale fingerprint; reload workspace and restart preparation. Error code preparation_stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreparationInput"
+              }
+            }
+          }
+        },
+        "description": "Call resume then role then report. Successful completed stages are idempotent. Out-of-order stages return 400. Stale fingerprints or concurrent input changes return 409 preparation_stale without committing stale analysis. Report preparation produces questions and preliminary_report, not draft.report. Rules fallback after optional coaching errors is a completed local analysis, identified in report.agent."
+      }
+    },
+    "/job-postings/{posting_id}/select": {
+      "parameters": [
+        {
+          "name": "posting_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Select current authorized DB posting for the saved resume; changed selection clears previous report and answers",
+        "tags": [
+          "Workspace",
+          "Job postings"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible/owned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guest/workspace": {
+      "get": {
+        "summary": "Read only this cookie session guest metadata; absent/expired data returns empty state",
+        "tags": [
+          "Guest workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized guest state; no report content is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestWorkspace"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Discard this guest resume, answers and report immediately",
+        "tags": [
+          "Guest workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized guest state; no report content is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestWorkspace"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guest/resume/upload": {
+      "post": {
+        "summary": "Extract an upload in memory and create/update a temporary guest draft",
+        "tags": [
+          "Guest workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized guest state; no report content is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestWorkspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Concurrent guest input changed; code guest_stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Guest draft expired or was deleted; code guest_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Upload exceeds request size limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Guest session or coarse socket-peer rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "At most 10 MiB; PDF at most 50 pages; extracted text at most 50,000 characters."
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "description": "TXT/PDF/DOCX limits match member upload. Only parsed text is persisted; no original binary is saved. Creates a fresh opaque guest pointer when absent or expired. Uploads invalidate previous answers/report and do not extend an existing expiry. Limit 10 attempts per guest session and 40 per socket peer per 30 minutes."
+      }
+    },
+    "/guest/career-target": {
+      "put": {
+        "summary": "Save guest desired-role metadata before selecting a public posting",
+        "tags": [
+          "Guest workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized guest state; no report content is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestWorkspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Concurrent guest input changed; code guest_stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Guest draft expired or was deleted; code guest_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Guest session or coarse socket-peer rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CareerTargetInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guest/job-postings/{posting_id}/select": {
+      "parameters": [
+        {
+          "name": "posting_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Select a current public DB posting; private postings are never visible",
+        "tags": [
+          "Guest workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized guest state; no report content is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestWorkspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Posting missing or private",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Concurrent guest input changed; code guest_stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Guest draft expired or was deleted; code guest_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Guest session or coarse socket-peer rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guest/analysis": {
+      "post": {
+        "summary": "Generate the real report server-side and return only locked completion state",
+        "tags": [
+          "Guest workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized guest state; no report content is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestWorkspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing prerequisites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Concurrent guest input changed; code guest_stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Guest draft expired or was deleted; code guest_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Guest session or coarse socket-peer rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisInput"
+              }
+            }
+          }
+        },
+        "description": "Requires uploaded resume and a selected public DB posting. Uses the existing analysis engine and optional question answers. Report and scores stay on the server. Limit 6 attempts per guest session and 60 per socket peer per 30 minutes. Deleted, expired or claimed drafts cannot be recreated by late analysis writes."
+      }
+    },
+    "/guest/claim": {
+      "post": {
+        "summary": "Claim the current session completed guest analysis into the authenticated account workspace",
+        "description": "Login/register/OAuth preserve the opaque guest pointer while rotating auth and CSRF. Requires the newly issued CSRF token. Atomic single-use transfer replaces the account current workspace with the completed guest draft and deletes temporary data. Missing/incomplete/expired guest data never modifies the account workspace. No client-supplied guest/user ID is accepted.",
+        "tags": [
+          "Guest workspace"
+        ],
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authenticated full workspace including report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid CSRF or Origin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No guest pointer in this session; code guest_missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest analysis not complete; code guest_incomplete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Guest draft expired, discarded or already claimed; code guest_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "careerlens_session",
+        "description": "Signed HttpOnly cookie containing opaque pointers to server-side auth and guest state. Guest endpoints accept an anonymous session; claim and existing member workflow endpoints require a valid authenticated server session."
+      },
+      "csrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "description": "Token returned by GET /auth/session, bound to the same cookie. Replace after login, registration, logout and password reset."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Question": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "prompt",
+          "reason"
+        ]
+      },
+      "Evidence": {
+        "type": "object",
+        "properties": {
+          "excerpt": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "resume",
+              "answer"
+            ]
+          },
+          "source_label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "excerpt",
+          "source",
+          "source_label"
+        ]
+      },
+      "Match": {
+        "type": "object",
+        "properties": {
+          "requirement": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "partial",
+              "missing"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "resume",
+              "answer",
+              "mixed",
+              "none"
+            ]
+          },
+          "source_label": {
+            "type": "string"
+          },
+          "evidence_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            }
+          },
+          "matched_terms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_terms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "contextual": {
+            "type": "boolean"
+          },
+          "quantified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requirement",
+          "evidence",
+          "status",
+          "source",
+          "source_label",
+          "evidence_items",
+          "matched_terms",
+          "missing_terms",
+          "contextual",
+          "quantified"
+        ]
+      },
+      "Report": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "integer"
+                },
+                "max_score": {
+                  "type": "integer"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "score",
+                "max_score",
+                "detail"
+              ]
+            }
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Match"
+            }
+          },
+          "strengths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priorities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "detail"
+              ]
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recruiter_email": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "subject",
+              "body"
+            ]
+          },
+          "methodology": {
+            "type": "string"
+          },
+          "analysis_mode": {
+            "type": "string",
+            "enum": [
+              "local_rules"
+            ]
+          },
+          "company": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "requirement_count": {
+            "type": "integer"
+          },
+          "confirmed_count": {
+            "type": "integer"
+          },
+          "partial_count": {
+            "type": "integer"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentMetadata"
+          },
+          "reference_guidance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReferenceGuidance"
+            }
+          },
+          "ai_coaching": {
+            "$ref": "#/components/schemas/Coaching"
+          },
+          "job_matches": {
+            "$ref": "#/components/schemas/CatalogMatching"
+          },
+          "assessment_context": {
+            "const": "desired_role"
+          },
+          "reference_source": {
+            "const": "internal_role_reference"
+          },
+          "improvement_preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImprovementPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unavailable when the rubric is unsupported, the report is incomplete, or no supported improvements remain."
+          }
+        },
+        "required": [
+          "score",
+          "verdict",
+          "summary",
+          "criteria",
+          "matches",
+          "strengths",
+          "gaps",
+          "priorities",
+          "questions",
+          "recruiter_email",
+          "methodology",
+          "analysis_mode",
+          "company",
+          "role",
+          "requirement_count",
+          "confirmed_count",
+          "partial_count",
+          "missing_count"
+        ]
+      },
+      "Draft": {
+        "type": "object",
+        "properties": {
+          "resume_text": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "job_text": {
+            "type": "string"
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "report": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Report"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "analysis_mode": {
+            "enum": [
+              "job_posting",
+              "desired_role"
+            ]
+          },
+          "career_target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CareerTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preparation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Preparation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selected_posting_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Selected DB posting ID. company, role and job_text retain the analyzed snapshot."
+          }
+        },
+        "required": [
+          "resume_text",
+          "filename",
+          "company",
+          "role",
+          "job_text",
+          "answers",
+          "report",
+          "created_at"
+        ]
+      },
+      "Workspace": {
+        "type": "object",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/Draft"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            }
+          },
+          "preparation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Preparation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "draft",
+          "questions"
+        ]
+      },
+      "ResumeInput": {
+        "type": "object",
+        "properties": {
+          "resume_text": {
+            "type": "string",
+            "minLength": 40,
+            "maxLength": 50000
+          }
+        },
+        "required": [
+          "resume_text"
+        ]
+      },
+      "JobInput": {
+        "type": "object",
+        "properties": {
+          "company": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "job_text": {
+            "type": "string",
+            "minLength": 40,
+            "maxLength": 50000
+          }
+        },
+        "required": [
+          "company",
+          "role",
+          "job_text"
+        ]
+      },
+      "AnalysisInput": {
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "object",
+            "description": "Only IDs returned by the current questions endpoint are accepted; omitted answers are empty.",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 8000
+            }
+          }
+        },
+        "required": []
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "description": "Trimmed and lowercased before lookup."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name"
+        ]
+      },
+      "OAuthProvider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "google",
+              "github",
+              "linkedin"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "enum": [
+              "Google",
+              "GitHub",
+              "LinkedIn"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled"
+        ]
+      },
+      "AuthSession": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/User"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "csrf_token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Send in X-CSRF-Token on unsafe API requests. Replaced after registration, login, logout and password reset."
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OAuthProvider"
+            }
+          },
+          "mail_mode": {
+            "type": "string",
+            "enum": [
+              "local",
+              "smtp"
+            ],
+            "description": "local writes password reset mail to the private server outbox; smtp uses configured SMTP."
+          }
+        },
+        "required": [
+          "user",
+          "csrf_token",
+          "providers",
+          "mail_mode"
+        ]
+      },
+      "RegisterInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Trimmed before validation."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "description": "Trimmed and lowercased before lookup."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 128,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "password"
+        ]
+      },
+      "LoginInput": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "description": "Trimmed and lowercased before lookup."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "maxLength": 128,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "ForgotPasswordInput": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "description": "Trimmed and lowercased before lookup."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "ResetPasswordInput": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 256,
+            "writeOnly": true,
+            "description": "Single-use reset token from the reset email; expires after 15 minutes."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 128,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "PasswordResetResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AuthSession"
+          },
+          {
+            "$ref": "#/components/schemas/Message"
+          }
+        ],
+        "description": "Anonymous session (user is null), rotated csrf_token, and completion message. Other sessions for this user are revoked."
+      },
+      "JobPostingInput": {
+        "type": "object",
+        "required": [
+          "company",
+          "role",
+          "location",
+          "employment_type",
+          "experience_level",
+          "description"
+        ],
+        "properties": {
+          "company": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "location": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "employment_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "experience_level": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "minLength": 40,
+            "maxLength": 50000
+          },
+          "skills": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            }
+          },
+          "source_url": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 2000,
+            "description": "Optional http(s) URL without credentials. Stored only; never fetched by this API."
+          }
+        }
+      },
+      "JobPosting": {
+        "type": "object",
+        "required": [
+          "company",
+          "role",
+          "location",
+          "employment_type",
+          "experience_level",
+          "description",
+          "skills",
+          "source_url",
+          "id",
+          "source_type",
+          "is_saved",
+          "is_owner",
+          "created_at"
+        ],
+        "properties": {
+          "company": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "location": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "employment_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "experience_level": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "minLength": 40,
+            "maxLength": 50000
+          },
+          "skills": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            }
+          },
+          "source_url": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 2000,
+            "description": "Optional http(s) URL without credentials. Stored only; never fetched by this API."
+          },
+          "id": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "example",
+              "manual"
+            ]
+          },
+          "is_saved": {
+            "type": "boolean"
+          },
+          "is_owner": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Examples are fictional educational postings. Manual postings are visible only to their creator. source_url on examples identifies role inspiration, not a live opening at the fictional company."
+      },
+      "JobPostingResponse": {
+        "type": "object",
+        "required": [
+          "posting"
+        ],
+        "properties": {
+          "posting": {
+            "$ref": "#/components/schemas/JobPosting"
+          }
+        }
+      },
+      "JobPostingList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "filters"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobPosting"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "filters": {
+            "type": "object",
+            "required": [
+              "locations",
+              "employment_types",
+              "experience_levels",
+              "skills"
+            ],
+            "properties": {
+              "locations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "employment_types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "experience_levels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "JobPostingDeleted": {
+        "type": "object",
+        "required": [
+          "deleted",
+          "id"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "Recommendation": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "evidence_quote": {
+            "maxLength": 600,
+            "minLength": 8,
+            "title": "Evidence Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "evidence_quote"
+        ],
+        "title": "Recommendation",
+        "type": "object"
+      },
+      "Coaching": {
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/Recommendation"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "reference_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Reference Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "summary",
+          "recommendations",
+          "reference_ids"
+        ],
+        "title": "Coaching",
+        "type": "object"
+      },
+      "ReferenceGuidance": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "text",
+          "source",
+          "score"
+        ]
+      },
+      "AgentMetadata": {
+        "type": "object",
+        "description": "Execution events, not model chain-of-thought. Default workflow is deterministic.",
+        "properties": {
+          "workflow_version": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "rules",
+              "llm_coaching"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tools_called": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retry_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "fallback_used": {
+            "type": "boolean"
+          },
+          "prompt_version": {
+            "type": "string"
+          },
+          "reference_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          }
+        },
+        "required": [
+          "workflow_version",
+          "mode",
+          "steps",
+          "tools_called",
+          "error_codes",
+          "retry_count",
+          "fallback_used",
+          "prompt_version",
+          "reference_count"
+        ]
+      },
+      "ResumeExampleSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "experience_level": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_type": {
+            "type": "string",
+            "const": "synthetic"
+          },
+          "source_urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "role",
+          "experience_level",
+          "summary",
+          "skills",
+          "source_type",
+          "source_urls"
+        ]
+      },
+      "ResumeExample": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ResumeExampleSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "resume_text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "resume_text"
+            ]
+          }
+        ]
+      },
+      "CatalogJobMatch": {
+        "type": "object",
+        "required": [
+          "id",
+          "company",
+          "role",
+          "location",
+          "score",
+          "matched",
+          "status",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "matched": {
+            "type": "boolean",
+            "description": "True exactly when score >= 60."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "scored",
+              "resume_required",
+              "no_requirements"
+            ]
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "requirement": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "matched_terms": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "requirement",
+                "status",
+                "matched_terms"
+              ]
+            }
+          }
+        }
+      },
+      "CatalogMatching": {
+        "type": "object",
+        "required": [
+          "threshold",
+          "method",
+          "status",
+          "total_jobs",
+          "evaluated_jobs",
+          "matched_count",
+          "truncated",
+          "items"
+        ],
+        "properties": {
+          "threshold": {
+            "type": "integer",
+            "const": 60
+          },
+          "method": {
+            "type": "string",
+            "const": "local_rules_v1"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "resume_required",
+              "no_jobs"
+            ]
+          },
+          "total_jobs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "evaluated_jobs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "matched_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "$ref": "#/components/schemas/CatalogJobMatch"
+            }
+          }
+        },
+        "description": "Current saved resume and optional evidence compared with all visible catalog jobs. Local rules total: job evidence70 + performed context20 + quantified outcomes10. Not hiring probability. Private postings belong only to this session user."
+      },
+      "CareerRole": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description"
+        ]
+      },
+      "CareerTargetInput": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "description": "ID from /career-roles; custom requires role."
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Required non-empty when role_id=custom; ignored for predefined roles."
+          },
+          "focus": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Optional user context used to tailor one follow-up question; never an invented employer requirement or direct score modifier."
+          }
+        },
+        "required": [
+          "role_id"
+        ]
+      },
+      "CareerTarget": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "focus": {
+            "type": "string"
+          },
+          "reference_source": {
+            "const": "internal_role_reference"
+          }
+        },
+        "required": [
+          "role_id",
+          "label",
+          "focus",
+          "reference_source"
+        ]
+      },
+      "PreparationStage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "resume",
+              "role",
+              "report"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "complete"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "detail"
+        ]
+      },
+      "Preparation": {
+        "type": "object",
+        "description": "Actual server-completed work, bound to resume/target/reference fingerprint. Errors never mark the stage complete. No elapsed-time percentage is claimed.",
+        "properties": {
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "stages": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/PreparationStage"
+            }
+          },
+          "resume_evidence": {
+            "type": "object",
+            "properties": {
+              "character_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "statement_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "action_statement_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "metric_statement_count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "role_reference": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "criteria": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "source": {
+                "const": "internal_role_reference"
+              },
+              "version": {
+                "type": "string"
+              },
+              "focus": {
+                "type": "string"
+              }
+            }
+          },
+          "preliminary_report": {
+            "$ref": "#/components/schemas/Report"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            }
+          }
+        },
+        "required": [
+          "fingerprint",
+          "complete",
+          "stages"
+        ]
+      },
+      "PreparationInput": {
+        "type": "object",
+        "properties": {
+          "stage": {
+            "enum": [
+              "resume",
+              "role",
+              "report"
+            ]
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "Send current workspace preparation fingerprint to reject stale input."
+          }
+        },
+        "required": [
+          "stage"
+        ]
+      },
+      "ImprovementPreview": {
+        "type": "object",
+        "description": "Hypothetical rules-only result if every listed evidence assumption becomes true. Not an assessed report, actual resume edit, or promised score.",
+        "properties": {
+          "basis": {
+            "const": "conditional_rules"
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "integer"
+                },
+                "max_score": {
+                  "type": "integer"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "score",
+                "max_score",
+                "detail"
+              ]
+            }
+          },
+          "notice": {
+            "type": "string"
+          },
+          "assumptions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "properties": {
+                "requirement": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "evidence",
+                    "outcome"
+                  ]
+                }
+              },
+              "required": [
+                "requirement",
+                "detail",
+                "kind"
+              ]
+            }
+          }
+        },
+        "required": [
+          "basis",
+          "score",
+          "criteria",
+          "notice",
+          "assumptions"
+        ]
+      },
+      "GuestDraft": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resume_attached": {
+            "type": "boolean"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "analysis_mode": {
+            "enum": [
+              "job_posting",
+              "desired_role"
+            ]
+          },
+          "career_target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CareerTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selected_posting_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Selected DB posting ID. company, role and job_text retain the analyzed snapshot."
+          }
+        },
+        "required": [
+          "resume_attached",
+          "filename",
+          "company",
+          "role",
+          "analysis_mode",
+          "career_target",
+          "selected_posting_id"
+        ]
+      },
+      "GuestWorkspace": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Strict guest allowlist. Never contains resume_text, job_text, answers, report, scores or preparation. completed and report_locked become true only after the actual report has been generated and persisted server-side. Empty or expired workspace returns false flags and null expires_at. expired distinguishes an expired/missing existing guest from a visitor with no guest data.",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/GuestDraft"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            }
+          },
+          "report_locked": {
+            "type": "boolean"
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Fixed UTC expiry: first valid upload plus 30 minutes. Edits and analyses never extend it."
+          },
+          "expired": {
+            "type": "boolean",
+            "description": "True only when this session has a stale guest pointer whose row has expired or disappeared. Allows a fresh OAuth return page to explain expiration rather than showing an older account report. Never true for a new visitor or after explicit discard."
+          }
+        },
+        "required": [
+          "draft",
+          "questions",
+          "report_locked",
+          "completed",
+          "expires_at",
+          "expired"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Authentication"
+    },
+    {
+      "name": "Workspace"
+    },
+    {
+      "name": "Guest workspace",
+      "description": "30-minute server-side temporary analysis with authenticated report claim. Expired rows are deleted independently every 30 seconds while the server is running and on startup/access."
+    }
+  ]
+}

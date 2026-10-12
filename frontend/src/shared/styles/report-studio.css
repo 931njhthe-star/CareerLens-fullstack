@@ -1,0 +1,269 @@
+/* Selected studio composition: crystal graphic, then real report context. */
+.result-layout--studio {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  height: max(460px, calc(100dvh - 260px));
+  padding: 0 24px 24px;
+  background: var(--canvas, #f6f9ff);
+}
+
+.report-section-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 4px 0;
+}
+
+.report-section-nav > a,
+.report-section-nav__context a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 13px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.report-section-nav > a:hover,
+.report-section-nav > a:focus-visible,
+.report-section-nav__context a:hover {
+  color: var(--green, #2563eb);
+  background: var(--green-soft, #eaf2ff);
+}
+
+.report-section-nav__context {
+  margin-left: auto;
+}
+
+.result-layout--studio .resume-score-card {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  scrollbar-color: #adc9ef white;
+  scrollbar-width: thin;
+}
+
+.result-layout--studio .report-studio-opening {
+  grid-template-columns: minmax(300px, 1.15fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(28px, 3.5vw, 52px);
+  padding: clamp(28px, 3.5vw, 48px);
+  background: white;
+}
+
+.result-layout--studio .report-studio-opening .report-visual-region {
+  max-width: none;
+  align-self: center;
+  background: #edf5ff;
+  border-color: #dce8f7;
+  border-radius: 16px;
+  padding: 7px;
+}
+
+.result-layout--studio .score-pyramid__scene {
+  height: clamp(260px, 60cqw, 320px);
+}
+
+/* A hidden score grid must not leave an empty shelf below the morphing shape. */
+.result-layout--studio .score-pyramid__readings[aria-hidden='true'] {
+  display: none;
+}
+
+.result-layout--studio .report-eye-heading {
+  padding: 14px 14px 0;
+}
+
+.result-layout--studio .report-eye-heading h3 {
+  font-size: 13px;
+}
+
+.result-layout--studio .report-visual-pair figcaption {
+  padding: 12px 14px;
+  border-top: 1px solid #dce8f7;
+}
+
+.pyramid-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+
+.pyramid-preview-actions .pyramid-preview-button {
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+}
+
+.pyramid-preview-actions .pyramid-assumptions-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  margin: 0;
+  text-align: left;
+}
+
+.result-layout--studio .report-position {
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.result-layout--studio .company-initial.large {
+  width: 43px;
+  height: 43px;
+  border-radius: 12px;
+  font-size: 23px;
+  flex-shrink: 0;
+  color: var(--green, #2563eb);
+  background: #edf5ff;
+}
+
+.result-layout--studio .report-position p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.result-layout--studio .report-position h1 {
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.report-studio-title {
+  margin: 29px 0 31px;
+  font-size: clamp(32px, 3.2vw, 48px);
+  line-height: 1.3;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  word-break: keep-all;
+}
+
+.result-layout--studio .report-hero-copy h3 {
+  color: var(--green, #2563eb);
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+
+.result-layout--studio .report-summary {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.95;
+  overflow-wrap: anywhere;
+}
+
+.report-studio-caption {
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.result-layout--studio .report-body {
+  padding: 0 clamp(28px, 3.5vw, 48px) 32px;
+}
+
+.result-layout--studio .readiness-section {
+  border-top: 1px solid var(--line);
+}
+
+.result-layout--studio .evaluation-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.result-layout--studio .evaluation-axis {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.result-layout--studio .evaluation-axis__heading h3 {
+  color: var(--green, #2563eb);
+  font-size: 14px;
+  gap: 6px;
+}
+
+.result-layout--studio .evaluation-criteria {
+  margin-top: 13px;
+}
+
+.result-layout--studio .evaluation-criterion__heading {
+  display: block;
+}
+
+.result-layout--studio .evaluation-criterion__heading h4 {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.result-layout--studio .evaluation-criterion__weight {
+  font-size: 10px;
+}
+
+@media (max-width: 1000px) {
+  .result-layout--studio .report-studio-opening {
+    grid-template-columns: minmax(280px, 1.1fr) minmax(0, 1fr);
+    gap: 26px;
+  }
+
+  .result-layout--studio .evaluation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .result-layout--studio {
+    padding: 0 14px 16px;
+    gap: 10px;
+  }
+
+  .report-section-nav {
+    gap: 0;
+  }
+
+  .report-section-nav > a,
+  .report-section-nav__context a {
+    font-size: 11px;
+    padding-inline: 10px;
+  }
+
+  .result-layout--studio .report-studio-opening {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+    padding: 24px 18px;
+  }
+
+  .result-layout--studio .report-visual-region {
+    padding: 4px;
+  }
+
+  .report-studio-title {
+    font-size: 35px;
+    margin: 24px 0;
+  }
+
+  .result-layout--studio .report-body {
+    padding: 0 18px 24px;
+  }
+
+  .result-layout--studio .evaluation-grid {
+    gap: 25px 18px;
+  }
+
+  .result-layout--studio .evaluation-axis__heading h3 {
+    font-size: 12px;
+  }
+}
+
+@media print {
+  .result-layout--studio {
+    display: none !important;
+  }
+}

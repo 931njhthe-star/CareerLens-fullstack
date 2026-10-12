@@ -1,0 +1,213 @@
+.guest-resume__privacy {
+  padding: 28px 32px;
+  border-top: 1px solid var(--line);
+  color: var(--green-dark);
+}
+.guest-resume__privacy h2 {
+  margin: 12px 0;
+  font-size: 20px;
+  color: var(--ink);
+}
+.guest-resume__privacy p {
+  max-width: 64ch;
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.8;
+  font-size: 14px;
+}
+.guest-resume .file-caption {
+  overflow-wrap: anywhere;
+}
+.report-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  isolation: isolate;
+  background: var(--canvas);
+}
+.report-gate__skeleton {
+  width: min(100% - 64px, 1120px);
+  margin: 7vh auto;
+  padding: 48px;
+  background: var(--paper);
+  min-height: 86vh;
+  filter: blur(12px);
+  user-select: none;
+  pointer-events: none;
+}
+.report-gate__skeleton-heading,
+.report-gate__skeleton-line,
+.report-gate__skeleton-copy span,
+.report-gate__skeleton-block {
+  display: block;
+  background: var(--line);
+  border-radius: 4px;
+}
+.report-gate__skeleton-heading {
+  width: 43%;
+  height: 32px;
+  margin-bottom: 24px;
+}
+.report-gate__skeleton-line {
+  width: 69%;
+  height: 14px;
+}
+.report-gate__skeleton-columns {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 60px;
+  margin: 70px 0;
+}
+.report-gate__skeleton-block {
+  height: 190px;
+}
+.report-gate__skeleton-copy {
+  display: grid;
+  gap: 24px;
+  align-content: center;
+}
+.report-gate__skeleton-copy span {
+  height: 14px;
+}
+.report-gate__skeleton-copy span:last-child {
+  width: 62%;
+}
+.report-gate__skeleton-rule {
+  border-top: 1px solid var(--line);
+  margin: 0 0 48px;
+}
+.report-gate__shade {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 32px 20px;
+  background: rgb(13 30 55 / 78%);
+  backdrop-filter: blur(8px);
+}
+.report-gate__dialog {
+  width: min(100%, 580px);
+  padding: 40px;
+  margin: auto;
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 24px 72px rgb(8 24 50 / 24%);
+}
+.report-gate__dialog:focus {
+  outline: none;
+}
+.report-gate__lock {
+  color: var(--green-dark);
+  margin-bottom: 20px;
+}
+.report-gate__dialog h1 {
+  font-size: clamp(24px, 3vw, 30px);
+  line-height: 1.4;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+.report-gate__description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.85;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.report-gate__retention {
+  margin: 28px 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.75;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.report-gate__duration,
+.report-gate__expiry {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.report-gate__expiry time {
+  font-variant-numeric: tabular-nums;
+}
+.report-gate__expiry span {
+  white-space: nowrap;
+}
+.report-gate__error {
+  margin: 18px 0 0;
+  color: var(--red);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.report-gate__actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+}
+.report-gate__actions .button {
+  width: 100%;
+  min-height: 48px;
+  white-space: normal;
+  line-height: 1.5;
+}
+.report-gate__discard {
+  display: block;
+  min-height: 44px;
+  margin: 18px auto -8px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+.report-gate__discard:hover {
+  color: var(--ink);
+}
+.report-gate button:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+.report-gate button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+@media (max-width: 600px) {
+  .guest-resume__privacy {
+    padding: 24px 20px;
+  }
+  .guest-resume__actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px 20px;
+  }
+  .report-gate__shade {
+    padding: 20px 16px;
+  }
+  .report-gate__dialog {
+    padding: 28px 24px;
+  }
+  .report-gate__skeleton {
+    width: calc(100% - 32px);
+    padding: 28px;
+  }
+  .report-gate__skeleton-columns {
+    gap: 24px;
+  }
+}
+@media print {
+  .report-gate,
+  .report-gate * {
+    display: none !important;
+  }
+}

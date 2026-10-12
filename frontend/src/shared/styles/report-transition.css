@@ -1,0 +1,160 @@
+/* Approved sapphire eye / orbit bridge. Only presentation owns these states. */
+.report-loading-overlay {
+  color: #17335b;
+  overflow: hidden;
+}
+
+.report-loading-overlay::backdrop {
+  background: rgb(15 31 52 / 68%);
+  backdrop-filter: blur(5px);
+  transition:
+    background 620ms ease,
+    backdrop-filter 620ms ease;
+}
+
+.report-loading-content {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  border: 1px solid rgb(205 223 246 / 80%);
+  border-radius: 24px;
+  background: #f4f8ff;
+  box-shadow: 0 28px 100px rgb(9 28 60 / 20%);
+  transition:
+    background 500ms ease,
+    border-color 500ms ease,
+    box-shadow 500ms ease;
+}
+
+.report-loading-heading h2,
+.report-loading-heading p,
+.report-loading-fallback,
+.report-loading-return {
+  color: #17335b;
+}
+
+.report-loading-heading,
+.report-loading-return,
+.report-loading-eye {
+  transition:
+    opacity 460ms ease,
+    filter 540ms ease;
+}
+
+.report-loading-return:hover {
+  color: #2056bf;
+}
+.report-loading-return:focus-visible {
+  outline-color: #3677e4;
+}
+.report-loading-eye .cl-analysis-eye__summary {
+  color: #17335b;
+}
+
+/* Pale blue belongs to light and fibres, not small text on white panels. */
+.report-loading-eye .cl-analysis-eye__state,
+.report-loading-eye .cl-analysis-eye__summary strong {
+  color: #2056bf;
+}
+
+.report-loading-overlay.is-transferring .report-loading-content {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.report-loading-overlay.is-transferring .report-loading-heading,
+.report-loading-overlay.is-transferring .report-loading-return {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.report-loading-overlay.is-transferring .report-loading-eye {
+  opacity: 0;
+  filter: blur(3px);
+}
+
+.report-loading-overlay.is-revealing::backdrop {
+  background: transparent;
+  backdrop-filter: blur(0);
+}
+
+[data-report-transition='forming'] #main {
+  visibility: hidden;
+}
+
+[data-report-transition='revealing'] [data-report-reveal] {
+  animation: report-content-form 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--report-reveal-index, 0) * 90ms);
+}
+
+[data-report-transition='revealing'] [data-report-frame]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 1px solid #98d6ff;
+  border-bottom: 0;
+  border-radius: inherit;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  pointer-events: none;
+  /* The report continues below this scroll window: never close its lower edge. */
+  mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 94%);
+  animation: report-frame-glint 1600ms ease-out both;
+}
+
+@keyframes report-content-form {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes report-frame-glint {
+  0% {
+    clip-path: inset(0 0 100% 0);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  65% {
+    clip-path: inset(0);
+    opacity: 0.75;
+  }
+  100% {
+    clip-path: inset(0);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 699px) {
+  .report-loading-content {
+    max-height: calc(100dvh - 20px);
+    border-radius: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-loading-overlay::backdrop,
+  .report-loading-content,
+  .report-loading-heading,
+  .report-loading-return,
+  .report-loading-eye {
+    transition: none;
+  }
+  [data-report-transition='revealing'] [data-report-reveal],
+  [data-report-transition='revealing'] [data-report-frame]::after {
+    animation: none;
+  }
+  [data-report-transition='revealing'] [data-report-frame]::after {
+    display: none;
+  }
+}

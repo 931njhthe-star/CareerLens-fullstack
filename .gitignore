@@ -1,0 +1,37 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python dependencies and caches
+**/.venv/
+**/venv/
+**/__pycache__/
+*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/*.egg-info/
+
+# Test and build output
+**/.coverage
+**/.coverage.*
+**/htmlcov/
+**/coverage/
+**/build/
+**/dist/
+
+# Runtime files and personal data
+*.log
+/.runtime/
+/runtime/
+/data/private/
+/data/uploads/
+/data/generated/
+/tests/fixtures/private/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
