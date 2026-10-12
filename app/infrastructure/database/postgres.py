@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 import re
 from typing import Any
@@ -105,7 +106,7 @@ def _adapt(value: Any, column: str | None = None) -> Any:
     if column in {'embedding', 'p_query'} and value is not None:
         return Vector(value)
     if isinstance(value, (dict, list)):
-        return Jsonb(value)
+        return Jsonb(value, dumps=lambda item: json.dumps(item, default=str))
     return value
 
 

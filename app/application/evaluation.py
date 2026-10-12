@@ -112,7 +112,7 @@ async def execute(db, llm, config, run, checkpointer=None):
                 'phase': context['phase'], 'schema': call['schema'], 'model': call['model'],
                 'request_hash': call['request_hash'], 'success': call['success'],
                 'duration_ms': call['duration_ms'], 'usage': call.get('usage', {}),
-                'artifact_id': artifact[0]['id'], 'error_type': call.get('error_type'),
+                'artifact_id': str(artifact[0]['id']), 'error_type': call.get('error_type'),
             },
         })
 
@@ -273,7 +273,7 @@ async def execute(db, llm, config, run, checkpointer=None):
             'run_id': run_id,
             'artifact_type': 'execution_report',
             'artifact_version': 1,
-            'content': {'markdown': execution_report, 'run_id': run_id},
+            'content': {'markdown': execution_report, 'run_id': str(run_id)},
             'source_snapshot_id': snapshot['id'],
             'schema_version': VERSION,
         }),
