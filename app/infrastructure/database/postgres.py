@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import re
 from typing import Any
 
 from pgvector import Vector
 from pgvector.psycopg import register_vector_async
+from psycopg.conninfo import conninfo_to_dict
 from psycopg import sql
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.rows import dict_row
@@ -39,6 +41,52 @@ JSON_COLUMNS = frozenset({
     'job_snapshot', 'financial_snapshot', 'model_config_snapshot', 'prompt_config_snapshot',
     'input_manifest', 'details', 'event_payload', 'validation_data',
 })
+logger = logging.getLogger(__name__)
+
+
+def _redact_connection_message(message: str, conninfo: str) -> str:
+    """Remove PostgreSQL URLs and passwords before a connection error is logged."""
+    if conninfo:
+        message = message.replace(conninfo, '[redacted DATABASE_URL]')
+        try:
+            password = conninfo_to_dict(conninfo).get('password')
+        except Exception:
+            password = None
+        if password:
+            message = message.replace(password, '[redacted]')
+
+    # Also redact URI credentials and keyword-style psycopg conninfo strings,
+    # including malformed URLs that the PostgreSQL parser echoes in errors.
+    message = re.sub(
+        r'(?i)(postgres(?:ql)?(?:\+[a-z0-9_-]+)?://)[^\s/@]*@',
+        r'\1[redacted]@',
+        message,
+    )
+    message = re.sub(
+        r'(?i)(\bpassword\s*=\s*)(?:\'[^\']*\'|"[^"]*"|[^\s]+)',
+        r'\1[redacted]',
+        message,
+    )
+    return message
+
+
+class _PsycopgPoolRedactionFilter(logging.Filter):
+    def __init__(self, conninfo: str):
+        super().__init__()
+        self.conninfo = conninfo
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            record.msg, record.args = 'PostgreSQL pool emitted an unformattable log record', ()
+        else:
+            record.msg = _redact_connection_message(message, self.conninfo)
+            record.args = ()
+        # Do not let a third-party traceback bypass the message redaction.
+        record.exc_info = None
+        record.exc_text = None
+        return True
 
 
 class DatabaseError(Exception):
@@ -89,6 +137,12 @@ def _split_projection(value: str) -> list[str]:
 class DB:
     def __init__(self, config: Settings):
         self.config = config
+        # psycopg.pool logs the underlying connect/configure error before the
+        # pool raises PoolTimeout. Redact that logger because malformed DSNs
+        # can otherwise be echoed in its warning message.
+        logging.getLogger('psycopg.pool').addFilter(
+            _PsycopgPoolRedactionFilter(config.database_url.get_secret_value())
+        )
         self.pool = AsyncConnectionPool(
             conninfo=config.database_url.get_secret_value(),
             min_size=1,
@@ -105,7 +159,24 @@ class DB:
 
     @staticmethod
     async def _configure(conn) -> None:
-        await register_vector_async(conn)
+        try:
+            await register_vector_async(conn)
+        except Exception as exc:
+            diagnostic = getattr(exc, 'diag', None)
+            reason = str(exc)
+            logger.error(
+                'PostgreSQL connection setup failed during pgvector registration: '
+                'error_type=%s sqlstate=%s reason=%s',
+                type(exc).__name__,
+                getattr(exc, 'sqlstate', None),
+                _redact_connection_message(reason, ''),
+            )
+            if diagnostic and getattr(diagnostic, 'message_hint', None):
+                logger.error(
+                    'PostgreSQL connection setup hint: %s',
+                    _redact_connection_message(diagnostic.message_hint, ''),
+                )
+            raise
 
     async def open(self) -> None:
         if not self.config.database_url.get_secret_value():
@@ -113,7 +184,13 @@ class DB:
         try:
             # Render can mark a new database available shortly before it accepts connections.
             await self.pool.open(wait=True, timeout=90)
-        except Exception:
+        except Exception as exc:
+            logger.error(
+                'PostgreSQL pool startup failed: error_type=%s pool_stats=%s; '
+                'see preceding sanitized psycopg.pool warnings for the underlying cause',
+                type(exc).__name__,
+                self.pool.get_stats(),
+            )
             await self.pool.close()
             raise
 
