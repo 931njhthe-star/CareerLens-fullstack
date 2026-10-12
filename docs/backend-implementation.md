@@ -26,22 +26,23 @@ python -m venv .venv
 
 ## Render 배포
 
-저장소 루트의 `render.yaml` Blueprint를 사용하면 Web Service 하나와 PostgreSQL 하나를 생성할 수 있습니다.
+교육용 AIO 2기 팀 워크스페이스에는 `blueprints/team3.yaml`을 사용합니다. 루트 `render.yaml`은 독립 워크스페이스에서 쓸 수 있는 CareerLens 전용 Blueprint입니다.
 
-1. 프로젝트를 GitHub에 push하고 Render에서 사용할 워크스페이스를 선택한 뒤 **New → Blueprint**로 이 저장소를 연결합니다. 교육용 AIO 2기 워크스페이스 초대가 있다면 개인 워크스페이스 대신 해당 워크스페이스를 선택합니다.
-2. Blueprint 이름은 CareerLens용으로 정하고 경로는 저장소 루트의 `render.yaml`을 사용합니다. 가이드 예시의 `AIO2-team<N>`와 `blueprints/team<N>.yaml`은 해당 교육 저장소의 팀 전용 설정이라 이 저장소에 적용하지 않습니다. 요금 예상과 생성할 리소스 이름이 맞는지 확인한 다음 진행합니다.
-3. Render가 요청하면 `OPENAI_API_KEY`와 프론트엔드의 `CORS_ORIGINS`를 입력하고 Blueprint를 생성합니다. `JWT_SECRET_KEY`는 Render가 생성하며 `DATABASE_URL`은 같은 Blueprint의 PostgreSQL 내부 연결값으로 연결됩니다.
-4. 새 DB에 한 번만 로컬에서 연결해 스키마를 초기화합니다. Render 대시보드의 내부 URL은 로컬 컴퓨터에서 사용할 수 없으므로 DB Info 화면의 external connection string을 이용하고, 초기화 후 외부 접근을 제한합니다.
+1. 프로젝트를 GitHub에 push하고 Render에서 **AIO 2기** 워크스페이스를 선택한 뒤 **New → Blueprint**로 CareerLens 저장소를 연결합니다.
+2. Blueprint Name은 `AIO2-team3`, Blueprint Path는 `blueprints/team3.yaml`로 지정합니다. `aio2-team3`, `agentservice-team3`, `agent-db-team3` 이름은 공유 워크스페이스의 3팀 리소스에 연결되므로 바꾸지 않습니다. Blueprint 미리보기에서 해당 3개 이름과 가이드의 예상 요금을 확인합니다.
+3. Render가 요청하면 `OPENAI_API_KEY`와 프론트엔드의 `CORS_ORIGINS`를 입력하고 Blueprint를 생성합니다. `JWT_SECRET_KEY`는 Render가 생성하며 `DATABASE_URL`은 팀 DB의 내부 연결값으로 연결됩니다.
+4. DB가 Available이 된 뒤 로컬에서 External Database URL을 `DATABASE_URL` 환경변수로 설정해 새 DB 스키마를 초기화하고 확인합니다. 이 작업은 새 DB에서 한 번만 수행하세요.
 
 ```powershell
 $env:DATABASE_URL = 'Render의 external connection string'
 .\.venv\Scripts\python.exe -m scripts.apply_runtime_migration
 .\.venv\Scripts\python.exe -m scripts.setup_checkpoints
 .\.venv\Scripts\python.exe -m scripts.seed_data --limit 100
+.\.venv\Scripts\python.exe -m scripts.check_db
 Remove-Item Env:DATABASE_URL
 ```
 
-5. 배포 후 서비스 `/health`, `/docs`, 회원가입·로그인, Markdown 업로드, 공고 조회, 평가 생성·진행률·결과 다운로드를 확인합니다.
+5. 서비스 상태 확인은 `/healthz`, DB 확인은 `/health` 또는 `scripts.check_db`로 합니다. `/docs`, 회원가입·로그인, Markdown 업로드, 공고 조회, 평가 생성·진행률·결과 다운로드도 확인합니다.
 
 Render PostgreSQL은 지원 버전에서 pgvector를 제공합니다. 통합 스키마가 `CREATE EXTENSION vector`를 실행합니다. [Render PostgreSQL 확장 안내](https://render.com/docs/postgresql-extensions)
 

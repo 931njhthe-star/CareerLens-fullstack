@@ -43,7 +43,10 @@ def prevent_background_worker_from_polling(monkeypatch):
 
 def test_health_and_auth_required():
     with TestClient(app) as client:
-        assert client.get('/health').status_code == 200
+        health = client.get('/health')
+        assert health.status_code == 200
+        assert health.headers['content-type'] == 'application/json; charset=utf-8'
+        assert client.get('/healthz').json() == {'status': 'ok'}
         assert client.get('/api/v1/resumes').status_code == 401
         assert client.get('/api/v1/jobs').status_code == 401
 

@@ -42,6 +42,14 @@ app.add_middleware(CORSMiddleware, allow_origins=[v.strip() for v in settings().
 app.include_router(router)
 
 
+@app.middleware('http')
+async def utf8_json_charset(request: Request, call_next):
+    response = await call_next(request)
+    if response.headers.get('content-type') == 'application/json':
+        response.headers['content-type'] = 'application/json; charset=utf-8'
+    return response
+
+
 @app.exception_handler(RuntimeError)
 @app.exception_handler(ValueError)
 async def configuration_error(request: Request, exc: Exception):
@@ -58,3 +66,9 @@ async def database_error(request: Request, exc: DatabaseError):
 async def health(request: Request):
     await request.app.state.db.health()
     return {'status': 'ok', 'version': '0.1.0'}
+
+
+@app.get('/healthz', tags=['health'])
+async def healthz():
+    # Render liveness checks should not turn a temporary database/LLM outage into a restart loop.
+    return {'status': 'ok'}

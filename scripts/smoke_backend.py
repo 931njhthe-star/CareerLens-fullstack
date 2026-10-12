@@ -15,7 +15,8 @@ async def main():
     run_id = None
     async with app.router.lifespan_context(app):
         db, config = app.state.db, app.state.config
-        conn = await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=0,
+        conn = await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=None,
+                                             connect_timeout=10,
                                              row_factory=dict_row, options='-c search_path=career_lens_checkpoints,public')
         saver = AsyncPostgresSaver(conn)
         try:

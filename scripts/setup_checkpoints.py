@@ -10,7 +10,8 @@ from app.core.asyncio import run
 async def main():
     config = settings()
     if not config.database_url.get_secret_value(): raise RuntimeError('DATABASE_URL is missing')
-    async with await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=0,
+    async with await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=None,
+                                             connect_timeout=10,
                                              row_factory=dict_row) as conn:
         await conn.execute('CREATE SCHEMA IF NOT EXISTS career_lens_checkpoints')
         await conn.execute('REVOKE ALL ON SCHEMA career_lens_checkpoints FROM PUBLIC')

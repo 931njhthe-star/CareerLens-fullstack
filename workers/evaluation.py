@@ -56,7 +56,8 @@ async def _run_worker(db, llm, config):
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
             from psycopg import AsyncConnection
             from psycopg.rows import dict_row
-            connection = await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=0,
+            connection = await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=None,
+                connect_timeout=10,
                 row_factory=dict_row, options='-c search_path=career_lens_checkpoints,public')
             await stack.enter_async_context(connection)
             saver = AsyncPostgresSaver(connection)

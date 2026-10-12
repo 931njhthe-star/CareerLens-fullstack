@@ -94,7 +94,12 @@ class DB:
             min_size=1,
             max_size=config.database_pool_max_size,
             open=False,
-            kwargs={'row_factory': dict_row, 'prepare_threshold': 0},
+            reconnect_timeout=90,
+            kwargs={
+                'row_factory': dict_row,
+                'prepare_threshold': None,
+                'connect_timeout': 10,
+            },
             configure=self._configure,
         )
 
@@ -105,7 +110,12 @@ class DB:
     async def open(self) -> None:
         if not self.config.database_url.get_secret_value():
             raise RuntimeError('DATABASE_URL is required')
-        await self.pool.open(wait=True)
+        try:
+            # Render can mark a new database available shortly before it accepts connections.
+            await self.pool.open(wait=True, timeout=90)
+        except Exception:
+            await self.pool.close()
+            raise
 
     async def health(self) -> bool:
         async with self.pool.connection() as conn:
