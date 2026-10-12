@@ -1,6 +1,5 @@
-"""Explicit live integration test: temporary auth user, paid model calls, cleanup."""
+"""Explicit live integration test: temporary account, paid model calls, cleanup."""
 import asyncio
-import secrets
 from uuid import uuid4
 import httpx
 from psycopg import AsyncConnection
@@ -12,51 +11,49 @@ from app.main import app
 
 
 async def main():
-    stage, user_id, resume_id, thread_id, storage_path, run_id = 'startup', None, None, None, None, None
+    stage, user_id, thread_id = 'startup', None, None
+    run_id = None
     async with app.router.lifespan_context(app):
         db, config = app.state.db, app.state.config
-        conn = await AsyncConnection.connect(config.supabase_db_url.get_secret_value(), autocommit=True, prepare_threshold=0,
-                                             row_factory=dict_row,options='-c search_path=career_lens_checkpoints,public')
+        conn = await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=0,
+                                             row_factory=dict_row, options='-c search_path=career_lens_checkpoints,public')
         saver = AsyncPostgresSaver(conn)
         try:
-            stage = 'temporary_auth_user'
-            email, password = f'career-lens-test-{uuid4().hex}@example.invalid', secrets.token_urlsafe(32)
-            created = await db.request('POST','/auth/v1/admin/users',data={'email':email,'password':password,'email_confirm':True})
-            user_id = created.get('id') or created['user']['id']
-            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as api:
-                stage = 'login'
-                response = await api.post('/api/v1/auth/login',json={'email':email,'password':password})
-                assert response.status_code == 200, f'HTTP {response.status_code}'
-                api.headers['Authorization'] = 'Bearer ' + response.json()['access_token']
+            stage = 'temporary_account'
+            email, password = f'career-lens-test-{uuid4().hex}@example.invalid', uuid4().hex + 'Aa!'
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as api:
+                created = await api.post('/api/v1/auth/signup', json={'email': email, 'password': password})
+                assert created.status_code == 201, f'HTTP {created.status_code}'
+                user_id = created.json()['user_id']
+                api.headers['Authorization'] = 'Bearer ' + created.json()['access_token']
                 stage = 'markdown_upload'
                 source = sorted((ROOT/'app/modules/resumes').glob('CV-001_*.md'))[0]
-                response = await api.post('/api/v1/resumes',files={'file':('resume.md',source.read_bytes(),'text/markdown')},data={'title':'Temporary integration fixture'})
+                response = await api.post('/api/v1/resumes', files={'file': ('resume.md', source.read_bytes(), 'text/markdown')}, data={'title': 'Temporary integration fixture'})
                 assert response.status_code == 201, f'HTTP {response.status_code}'
                 resume_id = response.json()['id']
-                storage_path = f'{user_id}/{resume_id}.md'
-                jobs = await db.select('job_postings',source_name='eq.local_markdown',source_external_id='eq.001.md',limit=1)
+                jobs = await db.select('job_postings', source_name='eq.local_markdown', source_external_id='eq.001.md', limit=1)
                 stage = 'enqueue'
                 key = uuid4().hex
-                body = {'resume_id':resume_id,'job_posting_id':jobs[0]['id']}
-                response = await api.post('/api/v1/evaluations',json=body,headers={'Idempotency-Key':key})
+                body = {'resume_id': resume_id, 'job_posting_id': jobs[0]['id']}
+                response = await api.post('/api/v1/evaluations', json=body, headers={'Idempotency-Key': key})
                 assert response.status_code == 202, f'HTTP {response.status_code}'
                 run_id = response.json()['run_id']
-                duplicate = await api.post('/api/v1/evaluations',json=body,headers={'Idempotency-Key':key})
+                duplicate = await api.post('/api/v1/evaluations', json=body, headers={'Idempotency-Key': key})
                 assert duplicate.json()['run_id'] == run_id
                 stage = 'evaluation_worker'
-                rows = await db.select('evaluation_runs',id=f'eq.{run_id}',select='graph_thread_id',limit=1)
+                rows = await db.select('evaluation_runs', id=f'eq.{run_id}', select='graph_thread_id', limit=1)
                 assert rows, 'Evaluation run was not persisted'
                 thread_id = rows[0]['graph_thread_id']
-                print('Live pipeline: backend evaluation worker started',flush=True)
+                print('Live pipeline: backend evaluation worker started', flush=True)
                 deadline = asyncio.get_running_loop().time() + config.evaluation_timeout_seconds + config.worker_lease_seconds
                 while True:
                     status = (await api.get(f'/api/v1/evaluations/{run_id}')).json()
-                    if status['status'] in ('completed','partial','failed','cancelled'):
+                    if status['status'] in ('completed', 'partial', 'failed', 'cancelled'):
                         break
                     if asyncio.get_running_loop().time() >= deadline:
                         raise TimeoutError('Backend evaluation worker did not finish before the deadline')
                     await asyncio.sleep(min(2, config.worker_poll_seconds))
-                assert status['status'] in ('completed','partial'), f"Worker state {status['status']}, reason {status.get('failure_reason')}"
+                assert status['status'] in ('completed', 'partial'), f"Worker state {status['status']}, reason {status.get('failure_reason')}"
                 stage = 'result_and_report'
                 response = await api.get(f'/api/v1/evaluations/{run_id}/result')
                 assert response.status_code == 200, f'HTTP {response.status_code}'
@@ -66,23 +63,23 @@ async def main():
                 report = await api.get(f'/api/v1/reports/{report_id}/download')
                 assert report.status_code == 200 and 'text/markdown' in report.headers['content-type']
                 destination = ROOT/'.runtime/integration-report.md'
-                destination.parent.mkdir(parents=True,exist_ok=True)
-                destination.write_text(report.text,encoding='utf-8')
-                print('Live pipeline: ' + status['status'] + '; twelve criteria and Markdown download verified',flush=True)
-                print('Report: .runtime/integration-report.md',flush=True)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(report.text, encoding='utf-8')
+                print('Live pipeline: ' + status['status'] + '; twelve criteria and Markdown download verified', flush=True)
+                print('Report: .runtime/integration-report.md', flush=True)
         except Exception as error:
-            print(f'Smoke test failed at {stage}: {type(error).__name__}',flush=True)
-            if isinstance(error,AssertionError): print(str(error),flush=True)
+            print(f'Smoke test failed at {stage}: {type(error).__name__}', flush=True)
+            if isinstance(error, AssertionError):
+                print(str(error), flush=True)
             raise SystemExit(1) from None
         finally:
-            if thread_id: await saver.adelete_thread(thread_id)
-            if storage_path: await db.request('DELETE','/storage/v1/object/resume-files',data={'prefixes':[storage_path]})
-            if run_id:
-                await db.delete('intermediate_artifacts',run_id=f'eq.{run_id}')
-                await db.delete('evaluation_runs',id=f'eq.{run_id}')
-            if user_id: await db.request('DELETE',f'/auth/v1/admin/users/{user_id}')
+            if thread_id:
+                await saver.adelete_thread(thread_id)
+            if user_id:
+                await db.delete('app_users', id=f'eq.{user_id}')
             await conn.close()
-            print('Temporary account, upload and checkpoint cleanup finished.',flush=True)
+            print('Temporary account, resume, evaluation and checkpoint cleanup finished.', flush=True)
 
 
-if __name__ == '__main__': run(main())
+if __name__ == '__main__':
+    run(main())

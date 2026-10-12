@@ -108,7 +108,7 @@ API 라우트와 worker는 application 유스케이스를 호출합니다. appli
 버전 관리할 이력서는 합성·비식별 자료를 사용합니다. 실제 업로드와 개인 자료는 `data/uploads`, `data/private`, `.runtime` 등의 Git 제외 위치에서 관리합니다.
 기술 분류·판정 정책처럼 서비스가 참조하는 지식 자료는 `data/knowledge`에 둡니다.
 
-Python/FastAPI/Pydantic, Supabase PostgreSQL, OpenAI GPT-6 Luna, LangGraph 및 DB 큐 기반 evaluation worker를 사용합니다. Worker는 백엔드 API 프로세스와 함께 실행됩니다.
+Python/FastAPI/Pydantic, PostgreSQL/pgvector, OpenAI GPT-6 Luna, LangGraph 및 DB 큐 기반 Evaluation Worker를 사용합니다. Worker는 FastAPI lifespan에서 함께 실행됩니다. Render 배포는 [백엔드 실행 안내](docs/backend-implementation.md)를 참고합니다.
 상세 흐름도 대응은 [구조 설계 문서](docs/architecture/folder-structure.md), fixture 사용 기준은 [테스트 데이터 안내](tests/fixtures/README.md)를 참고합니다.
 
 ## 개발 시작 기준

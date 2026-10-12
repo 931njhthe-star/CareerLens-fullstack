@@ -1,5 +1,7 @@
 annotated-doc==0.0.5
 annotated-types==0.8.0
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
 anyio==4.15.1
 beautifulsoup4==4.15.0
 certifi==2026.7.22
@@ -39,6 +41,7 @@ ormsgpack==1.12.2
 packaging==26.3
 pandas==3.0.6
 peewee==4.5.3
+pgvector==0.5.1
 platformdirs==4.12.4
 pluggy==1.6.0
 protobuf==7.36.2
@@ -46,6 +49,7 @@ psycopg==3.3.6
 psycopg-binary==3.3.6
 psycopg-pool==3.3.3
 pycparser==3.0
+PyJWT==2.15.1
 pydantic==2.13.5
 pydantic-settings==2.15.0
 pydantic_core==2.46.5
@@ -55,6 +59,7 @@ pytest-asyncio==1.4.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
 python-multipart==0.0.32
+pwdlib==0.3.1
 pytz==2026.5
 PyYAML==6.0.3
 regex==2026.9.29

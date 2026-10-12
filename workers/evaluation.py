@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from app.core.config import settings
 from app.core.asyncio import run
-from app.infrastructure.database.supabase import DB
+from app.infrastructure.database.postgres import DB
 from app.integrations.llm.client import LLM
 from app.application.evaluation import execute
 
@@ -52,11 +52,11 @@ async def _run_worker(db, llm, config):
     async with AsyncExitStack() as stack:
         saver = None
         if config.checkpoint_enabled:
-            if not config.supabase_db_url.get_secret_value(): raise RuntimeError('SUPABASE_DB_URL required for checkpoint persistence')
+            if not config.database_url.get_secret_value(): raise RuntimeError('DATABASE_URL required for checkpoint persistence')
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
             from psycopg import AsyncConnection
             from psycopg.rows import dict_row
-            connection = await AsyncConnection.connect(config.supabase_db_url.get_secret_value(), autocommit=True, prepare_threshold=0,
+            connection = await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=0,
                 row_factory=dict_row, options='-c search_path=career_lens_checkpoints,public')
             await stack.enter_async_context(connection)
             saver = AsyncPostgresSaver(connection)

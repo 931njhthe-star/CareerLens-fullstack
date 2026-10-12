@@ -1,73 +1,65 @@
-# CareerLens 백엔드 실행 안내
+# CareerLens 백엔드와 Render 배포
 
-Python 3.12 이상. FastAPI API 서버가 LangGraph evaluation worker도 함께 실행합니다.
+Python 3.12 이상. FastAPI 한 프로세스가 API와 Evaluation Worker를 함께 실행합니다. 데이터베이스는 Render PostgreSQL이며 비동기 psycopg 연결을 사용합니다.
 
-## 최초 설정
+## 로컬 실행
 
-1. `.env`의 `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` 입력.
-2. Supabase SQL Editor에서 `migrations/001_backend_runtime.sql`, `migrations/002_latest_evaluation_wins.sql`을 순서대로 실행하거나 `python -m scripts.apply_runtime_migration`을 실행합니다. 기존 v4 전체 SQL을 재실행하지 마세요.
-3. Storage `resume-files` MIME 설정에 `text/markdown`, `text/plain`, `text/x-markdown` 추가. 비공개 유지.
-4. Auth 이메일·비밀번호 가입 활성화. 이메일 확인이 켜져 있으면 확인 후 로그인.
-
-프로젝트 루트(`app`, `workers`, `frontend` 폴더가 있는 위치)에서 실행합니다.
+1. `.env.example`을 참고해 `.env`에 `DATABASE_URL`, `JWT_SECRET_KEY`, `OPENAI_API_KEY`를 설정합니다. JWT 키는 `python -c "import secrets; print(secrets.token_urlsafe(48))"`로 생성합니다.
+2. **새 빈 PostgreSQL DB에서만** Render 통합 스키마를 적용합니다.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m scripts.check_connections
+.\.venv\Scripts\python.exe -m scripts.apply_runtime_migration
 .\.venv\Scripts\python.exe -m scripts.setup_checkpoints
 .\.venv\Scripts\python.exe -m scripts.seed_data --limit 100
+.\.venv\Scripts\python.exe -m scripts.check_connections
 ```
 
-이제 API 서버가 evaluation worker도 함께 실행하므로 아래 서버 하나만 실행하면 됩니다.
+`scripts.apply_runtime_migration`은 `public` 스키마에 테이블이 이미 있으면 중단합니다. 기존 DB에 재실행하지 마세요. 실제 Supabase 사용자의 계정, 이력서, 평가 기록은 자동 복사되지 않습니다. 사용자는 새 계정을 만들어야 하고 기존 이력서 파일은 다시 업로드해야 합니다.
+
+서버 실행:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5101 --loop app.core.asyncio:uvicorn_loop_factory
 ```
 
-별도 `python -m workers.evaluation` 실행은 필요하지 않습니다. Swagger: `http://localhost:5101/docs`. `POST /api/v1/auth/signup` → 이메일 확인 → `POST /api/v1/auth/login` → Swagger Authorize에 access_token 입력.
+## Render 배포
 
-`POST /api/v1/resumes`에 UTF-8 `.md` 업로드 → `GET /api/v1/jobs` 공고 선택 → `POST /api/v1/evaluations`에 resume_id/job_posting_id → 상태 또는 SSE 조회 → result 조회 → reports/{id}/download로 Markdown 다운로드.
+저장소 루트의 `render.yaml` Blueprint를 사용하면 Web Service 하나와 PostgreSQL 하나를 생성할 수 있습니다.
 
-보고서는 자동 생성됩니다. PDF 및 별도 보고서 재생성 API는 이 버전에 포함하지 않습니다.
+1. 프로젝트를 GitHub에 push하고 Render에서 **New → Blueprint**로 저장소를 연결합니다.
+2. Render가 요청하면 `OPENAI_API_KEY`를 입력하고 Blueprint를 생성합니다. `JWT_SECRET_KEY`는 Render가 생성하며 `DATABASE_URL`은 같은 Blueprint의 PostgreSQL 내부 연결값으로 연결됩니다.
+3. 새 DB에 한 번만 로컬에서 연결해 스키마를 초기화합니다. Render 대시보드의 내부 URL은 로컬 컴퓨터에서 사용할 수 없으므로 DB Info 화면의 external connection string을 이용하고, 초기화 후 외부 접근을 제한합니다.
 
-## 평가 정책
+```powershell
+$env:DATABASE_URL = 'Render의 external connection string'
+.\.venv\Scripts\python.exe -m scripts.apply_runtime_migration
+.\.venv\Scripts\python.exe -m scripts.setup_checkpoints
+.\.venv\Scripts\python.exe -m scripts.seed_data --limit 100
+Remove-Item Env:DATABASE_URL
+```
 
-`app/modules/analysis/scoring/rubric.py`에 12개 초기 기준과 가중치가 있습니다. 문서 자료 안의 지시는 수행하지 않습니다.
-4개 영역의 12개 기준을 병렬 평가하고 근거 검증·자기 검토·선택적 독립 평가를 적용합니다. 전역 검증 실패는 영향받은 기준만 최대 1회 재평가.
-근거 없는 인용은 검증 후 점수 보류. 경쟁자 실측 데이터 없이 D영역은 추정 표시, 신뢰도 상한 0.6.
-미확인 점수는 null이며 종합점수 보류, 평가 제외는 가중치 재분배, 실제 0은 기하평균 전체에 0으로 반영합니다.
-기존 예시 65.5점과 달리 관련 경력이 명시적으로 0이면 C1=0, 지원 자격 및 종합점수도 0이 됩니다. 이는 채택한 곱셈 정책에 따른 결과입니다.
-경력은 월 단위 포함 계산, 중복 월 제거, 교육 프로젝트 제외. 인턴은 현재 기본 기준에서 제외하며, 공고가 인턴 인정을 명시하는 사례는 별도 기준 보완이 필요합니다.
+4. Render Web Service의 `CORS_ORIGINS`에 실제 프론트엔드 origin을 설정합니다. Render 시작 명령은 Blueprint에 포함되어 있고 `/health`는 DB 연결까지 확인합니다.
+5. 배포 후 서비스 `/health`, `/docs`, 회원가입·로그인, Markdown 업로드, 공고 조회, 평가 생성·진행률·결과 다운로드를 확인합니다.
 
-## 데이터와 운영
+Render PostgreSQL은 지원 버전에서 pgvector를 제공합니다. 통합 스키마가 `CREATE EXTENSION vector`를 실행합니다. [Render PostgreSQL 확장 안내](https://render.com/docs/postgresql-extensions)
 
-- `scripts.seed_data`는 직속 폴더의 001~100 공고만 적재하며 목록 문서·작성 프롬프트·중복 하위 폴더는 제외합니다.
-- 가상 이력서는 자동으로 사용자 계정에 넣지 않습니다. 테스트 계정으로 원하는 파일을 업로드하세요.
-- 기업 티커는 저장된 company_tickers 또는 명시적 매핑만 사용. 비상장·실패는 평가 중단 없이 unavailable 처리.
-- 기업 요약은 24시간 캐시. 재무 규모를 경쟁률·경쟁자 학력으로 변환하지 않습니다.
-- 워커 선점은 RPC 트랜잭션, lease와 heartbeat로 관리. 중단 작업은 최대 1회 회수합니다.
-- 새 평가 요청은 같은 사용자의 이전 `queued`·`running` 평가를 취소하고 새 작업 하나만 대기시킵니다. 재요청 처리와 선점은 사용자별 트랜잭션 잠금으로 직렬화합니다.
-- 체크포인트는 비공개 career_lens_checkpoints 스키마. Data API exposed schemas에 추가하지 마세요.
-- 서비스 키는 서버에서만 사용. 모든 사용자 자료 API에 소유권 검사를 적용합니다.
-- 평가 이력이 있는 이력서 삭제는 보존 스냅샷·체크포인트 정리 구현 전까지 409로 차단합니다.
-- 개발용 코드입니다. 공개 배포 전 인증/업로드 rate limit, 비용 한도, 보존 기간 및 삭제 작업을 운영환경에서 설정하세요.
+체크포인터는 `career_lens_checkpoints` 전용 스키마에 저장합니다. 한 번 초기화한 뒤 Worker가 자동 실행됩니다. 여러 Web Service 인스턴스가 떠도 DB lease가 평가 작업을 한 곳에서만 선점하게 합니다.
+
+## API 흐름
+
+Swagger: `/docs`. `POST /api/v1/auth/signup` 또는 `/api/v1/auth/login`의 access token을 Authorize에 넣습니다. `/api/v1/auth/refresh`는 일회성 Refresh Token을 회전합니다.
+
+`POST /api/v1/resumes`에 UTF-8 `.md` 업로드 → `GET /api/v1/jobs` 공고 선택 → `POST /api/v1/evaluations` → 상태/진행률/SSE → 결과와 Markdown 보고서 다운로드.
+
+평가 파이프라인은 4개 영역의 12개 기준 병렬 평가, lease·heartbeat·복구, 진행 이벤트, 중간 산출물, LangGraph 체크포인트 및 성능 측정을 유지합니다. 원본 이력서 텍스트와 보고서 응답은 PostgreSQL에 저장됩니다. Render 파일 시스템의 보고서 사본은 임시 산출물이며 원본으로 사용하지 않습니다.
 
 ## 검증
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -c "import json; from app.main import app; print(json.dumps(app.openapi(),ensure_ascii=False))" > contracts/openapi/development.json
-```
-
-테스트는 실제 키·네트워크 없이 점수 정책, 월 합집합, 그래프 병렬 합류와 선택적 재평가, 업로드 검증, 소유권 검사를 검증합니다.
-
-실제 통합 검증(유료 모델 호출 및 임시 테스트 계정 생성·삭제):
-
-```powershell
 .\.venv\Scripts\python.exe -m scripts.smoke_backend
 ```
 
-2026-10-08 실제 Supabase 로그인, Markdown Storage 업로드, 중복 요청 방지, 작업 선점, pgvector 검색, Postgres 체크포인트, GPT-6 Luna 12개 항목 평가, 결과 API와 Markdown 다운로드를 확인했습니다.
-샘플의 경력 요건 미충족을 확인했으며, 전역 검증에서 남은 설명 문제는 partial 상태와 종합점수 보류로 표시했습니다.
-임시 계정·평가·Storage 파일·체크포인트는 정리했고, 로컬 `.runtime/integration-report.md`만 남겼습니다.
+`smoke_backend`는 새 임시 계정을 만들고 실제 LLM 평가를 실행하므로 호출 비용이 발생합니다. 요청한 경우에만 실행합니다.

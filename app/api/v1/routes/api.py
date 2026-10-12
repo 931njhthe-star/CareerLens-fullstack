@@ -1,20 +1,27 @@
 import asyncio
+import hashlib
 import json
+import secrets
+import time
 import tiktoken
 from uuid import UUID, uuid4
-from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
+import jwt
+from jwt import InvalidTokenError
+from pwdlib import PasswordHash
 from app.application.evaluation import active_rubric
 from app.application.parsing import parse_document
 from app.integrations.company_info.yahoo import financial_context
 from app.retrieval.indexing.markdown import digest
 from app.api.v1.schemas import UploadedResume, EvaluationStarted, RunStatus, MatchResult, ReportView
+from app.infrastructure.database.postgres import DatabaseError
 
 router = APIRouter(prefix='/api/v1')
 bearer = HTTPBearer(auto_error=False)
+password_hasher = PasswordHash.recommended()
 
 
 def services(request: Request):
@@ -23,14 +30,14 @@ def services(request: Request):
 
 async def user(request: Request, token: HTTPAuthorizationCredentials | None = Depends(bearer)) -> str:
     if not token: raise HTTPException(401, '로그인이 필요합니다.')
-    db, _, _ = services(request)
+    _, _, config = services(request)
     try:
-        result = await db.request('GET', '/auth/v1/user', headers={'Authorization': f'Bearer {token.credentials}'})
-        uid = str(UUID(result['id']))
-    except Exception:
+        claims = jwt.decode(token.credentials, config.jwt_secret_key.get_secret_value(),
+                            algorithms=['HS256'], issuer=config.jwt_issuer,
+                            options={'require': ['sub', 'iat', 'exp', 'iss']})
+        return str(UUID(claims['sub']))
+    except (InvalidTokenError, KeyError, ValueError):
         raise HTTPException(401, '유효하지 않거나 만료된 로그인입니다.') from None
-    await db.upsert('profiles', {'user_id': uid}, 'user_id')
-    return uid
 
 
 async def owned(db, table, ident, uid):
@@ -43,6 +50,15 @@ class Credentials(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: SecretStr = Field(min_length=8)
 
+    @field_validator('email')
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        local, separator, domain = value.partition('@')
+        if not separator or not local or '.' not in domain or any(char.isspace() for char in value):
+            raise ValueError('A valid email address is required')
+        return value
+
 
 class EvaluationRequest(BaseModel):
     resume_id: UUID
@@ -52,18 +68,52 @@ class EvaluationRequest(BaseModel):
 @router.post('/auth/signup', status_code=201, tags=['auth'])
 async def signup(body: Credentials, request: Request):
     db, _, _ = services(request)
-    response = await db.request('POST', '/auth/v1/signup', data={'email': body.email, 'password': body.password.get_secret_value()})
-    if response.get('user', {}).get('id'):
-        await db.upsert('profiles', {'user_id': response['user']['id']}, 'user_id')
-    return {'user_id': response.get('user', {}).get('id') or response.get('id'), 'access_token': response.get('access_token'),
-            'refresh_token': response.get('refresh_token'), 'email_confirmation_required': not bool(response.get('access_token'))}
+    try:
+        hashed = await asyncio.to_thread(password_hasher.hash, body.password.get_secret_value())
+        account = await db.create_account(body.email, hashed)
+    except DatabaseError as error:
+        if error.status == 409: raise HTTPException(409, '이미 등록된 이메일입니다.') from None
+        raise
+    access, refresh_token = await issue_tokens(db, request, str(account['id']))
+    return {'user_id': str(account['id']), 'access_token': access,
+            'refresh_token': refresh_token, 'email_confirmation_required': False}
 
 
 @router.post('/auth/login', tags=['auth'])
 async def login(body: Credentials, request: Request):
     db, _, _ = services(request)
-    result = await db.request('POST', '/auth/v1/token', params={'grant_type': 'password'}, data={'email': body.email, 'password': body.password.get_secret_value()})
-    return {k: result.get(k) for k in ['access_token', 'refresh_token', 'expires_in', 'token_type']}
+    rows = await db.select('app_users', select='id,email,password_hash', email=f"eq.{body.email}", limit=1)
+    if not rows:
+        raise HTTPException(401, '이메일 또는 비밀번호가 올바르지 않습니다.')
+    try:
+        valid = await asyncio.to_thread(password_hasher.verify, body.password.get_secret_value(), rows[0]['password_hash'])
+    except (ValueError, TypeError):
+        valid = False
+    if not valid:
+        raise HTTPException(401, '이메일 또는 비밀번호가 올바르지 않습니다.')
+    access, refresh_token = await issue_tokens(db, request, str(rows[0]['id']))
+    return {'access_token': access, 'refresh_token': refresh_token,
+            'expires_in': request.app.state.config.access_token_seconds, 'token_type': 'bearer'}
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def access_token(request: Request, uid: str) -> str:
+    config = request.app.state.config
+    now = int(time.time())
+    return jwt.encode({'sub': uid, 'iss': config.jwt_issuer, 'iat': now,
+                       'exp': now + config.access_token_seconds},
+                      config.jwt_secret_key.get_secret_value(), algorithm='HS256')
+
+
+async def issue_tokens(db, request: Request, uid: str):
+    config = request.app.state.config
+    refresh = secrets.token_urlsafe(48)
+    expiry = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + config.refresh_token_days * 86400))
+    await db.insert('refresh_tokens', {'user_id': uid, 'token_hash': token_hash(refresh), 'expires_at': expiry})
+    return access_token(request, uid), refresh
 
 
 class RefreshToken(BaseModel):
@@ -73,8 +123,15 @@ class RefreshToken(BaseModel):
 @router.post('/auth/refresh', tags=['auth'])
 async def refresh(body: RefreshToken, request: Request):
     db, _, _ = services(request)
-    result = await db.request('POST', '/auth/v1/token', params={'grant_type': 'refresh_token'}, data={'refresh_token': body.refresh_token.get_secret_value()})
-    return {k: result.get(k) for k in ['access_token', 'refresh_token', 'expires_in', 'token_type']}
+    old_token = body.refresh_token.get_secret_value()
+    new_token = secrets.token_urlsafe(48)
+    config = request.app.state.config
+    expiry = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + config.refresh_token_days * 86400))
+    uid = await db.rotate_refresh_token(token_hash(old_token), token_hash(new_token), expiry)
+    if not uid:
+        raise HTTPException(401, '유효하지 않거나 만료된 Refresh Token입니다.')
+    return {'access_token': access_token(request, str(uid)), 'refresh_token': new_token,
+            'expires_in': config.access_token_seconds, 'token_type': 'bearer'}
 
 
 @router.get('/me', tags=['auth'])
@@ -120,14 +177,8 @@ async def upload_resume(request: Request, file: UploadFile = File(...), title: s
         raise HTTPException(413, '평가 가능한 문서 길이를 초과했습니다.')
     if len(title) > 200: raise HTTPException(422, '제목은 200자 이하로 입력하세요.')
     ident = str(uuid4())
-    path = f'{uid}/{ident}.md'
-    await db.request('POST', f'/storage/v1/object/resume-files/{path}', content=text.encode('utf-8'), headers={'Content-Type': 'text/markdown'})
-    try:
-        result = await db.insert('resumes', {'id': ident, 'user_id': uid, 'title': title, 'storage_path': path, 'original_text': text,
-                                           'parse_status': 'ready', 'parsed_data': {'format': 'markdown', 'source_hash': digest(text)}, 'parser_version': 'markdown-v1'})
-    except Exception:
-        await db.request('DELETE', '/storage/v1/object/resume-files', data={'prefixes': [path]})
-        raise
+    result = await db.insert('resumes', {'id': ident, 'user_id': uid, 'title': title, 'original_text': text,
+                                        'parse_status': 'ready', 'parsed_data': {'format': 'markdown', 'source_hash': digest(text)}, 'parser_version': 'markdown-v1'})
     return {'id': ident, 'parse_status': result[0]['parse_status'], 'title': title}
 
 
@@ -149,7 +200,6 @@ async def delete_resume(resume_id: UUID, request: Request, uid: str = Depends(us
     row = await owned(db, 'resumes', resume_id, uid)
     runs = await db.select('evaluation_runs', resume_id=f'eq.{resume_id}', limit=1)
     if runs: raise HTTPException(409, '평가 이력이 있는 이력서 삭제는 보존 데이터 정리 기능 구현 후 지원합니다.')
-    if row.get('storage_path'): await db.request('DELETE', '/storage/v1/object/resume-files', data={'prefixes': [row['storage_path']]})
     await db.delete('resumes', id=f'eq.{resume_id}', user_id=f'eq.{uid}')
     return Response(status_code=204)
 

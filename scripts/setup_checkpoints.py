@@ -9,14 +9,14 @@ from app.core.asyncio import run
 
 async def main():
     config = settings()
-    if not config.supabase_db_url.get_secret_value(): raise RuntimeError('SUPABASE_DB_URL is missing')
-    async with await AsyncConnection.connect(config.supabase_db_url.get_secret_value(), autocommit=True, prepare_threshold=0,
+    if not config.database_url.get_secret_value(): raise RuntimeError('DATABASE_URL is missing')
+    async with await AsyncConnection.connect(config.database_url.get_secret_value(), autocommit=True, prepare_threshold=0,
                                              row_factory=dict_row) as conn:
         await conn.execute('CREATE SCHEMA IF NOT EXISTS career_lens_checkpoints')
-        await conn.execute('REVOKE ALL ON SCHEMA career_lens_checkpoints FROM PUBLIC, anon, authenticated')
+        await conn.execute('REVOKE ALL ON SCHEMA career_lens_checkpoints FROM PUBLIC')
         await conn.execute('SET search_path TO career_lens_checkpoints, public')
         await AsyncPostgresSaver(conn).setup()
-        await conn.execute('REVOKE ALL ON ALL TABLES IN SCHEMA career_lens_checkpoints FROM PUBLIC, anon, authenticated')
+        await conn.execute('REVOKE ALL ON ALL TABLES IN SCHEMA career_lens_checkpoints FROM PUBLIC')
     print('Private checkpoint schema initialized.')
 
 

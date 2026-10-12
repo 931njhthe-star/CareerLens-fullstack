@@ -12,9 +12,12 @@ class Settings(BaseSettings):
     openai_model: str = 'gpt-6-luna'
     embedding_model: str = 'text-embedding-3-small'
     embedding_dimensions: int = 1536
-    supabase_url: str = ''
-    supabase_service_role_key: SecretStr = SecretStr('')
-    supabase_db_url: SecretStr = SecretStr('')
+    database_url: SecretStr = SecretStr('')
+    jwt_secret_key: SecretStr = SecretStr('')
+    jwt_issuer: str = 'careerlens'
+    access_token_seconds: int = 900
+    refresh_token_days: int = 30
+    database_pool_max_size: int = 10
     app_env: str = 'development'
     auth_enabled: bool = True
     admin_user_ids: str = ''

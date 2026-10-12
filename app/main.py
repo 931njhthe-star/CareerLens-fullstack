@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.infrastructure.database.supabase import DB, DatabaseError
+from app.infrastructure.database.postgres import DB, DatabaseError
 from app.integrations.llm.client import LLM
 from app.api.v1.routes.api import router
 from workers.evaluation import run_worker
@@ -14,7 +14,11 @@ from workers.evaluation import run_worker
 async def lifespan(app):
     config = settings()
     if not config.auth_enabled: raise RuntimeError('Authentication cannot be disabled for this backend')
-    app.state.config, app.state.db, app.state.llm = config, DB(config), LLM(config)
+    if len(config.jwt_secret_key.get_secret_value()) < 32:
+        raise RuntimeError('JWT_SECRET_KEY must contain at least 32 characters')
+    db = DB(config)
+    await db.open()
+    app.state.config, app.state.db, app.state.llm = config, db, LLM(config)
     worker_task = asyncio.create_task(
         run_worker(app.state.db, app.state.llm, config),
         name='evaluation-worker',
@@ -51,5 +55,6 @@ async def database_error(request: Request, exc: DatabaseError):
 
 
 @app.get('/health', tags=['health'])
-async def health():
+async def health(request: Request):
+    await request.app.state.db.health()
     return {'status': 'ok', 'version': '0.1.0'}

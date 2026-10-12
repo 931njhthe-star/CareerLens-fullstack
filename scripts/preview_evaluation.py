@@ -1,4 +1,4 @@
-"""Explicit paid model smoke test; no Supabase writes, output is local Markdown."""
+"""Explicit paid model smoke test; no database writes, output is local Markdown."""
 import asyncio
 from datetime import datetime
 from zoneinfo import ZoneInfo

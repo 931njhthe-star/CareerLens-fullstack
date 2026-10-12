@@ -4,7 +4,7 @@ import argparse
 import re
 from pathlib import Path
 from app.core.config import ROOT, settings
-from app.infrastructure.database.supabase import DB
+from app.infrastructure.database.postgres import DB
 
 
 def posting(text, filename):
@@ -25,6 +25,7 @@ def posting(text, filename):
 async def main(limit):
     db = DB(settings())
     try:
+        await db.open()
         files = sorted((ROOT / 'app/modules/job_postings').glob('[0-9][0-9][0-9].md'))[:limit]
         for path in files:
             data = posting(path.read_text(encoding='utf-8-sig'), path.name)

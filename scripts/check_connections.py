@@ -1,17 +1,20 @@
 """Read-only checks. Never print secrets, connection URLs or document content."""
 import asyncio
 from app.core.config import settings
-from app.infrastructure.database.supabase import DB
+from app.infrastructure.database.postgres import DB
 from app.integrations.llm.client import LLM
 
 
 async def main():
     config = settings()
-    for name in ['openai_api_key', 'supabase_url', 'supabase_service_role_key', 'supabase_db_url']:
+    for name in ['openai_api_key', 'database_url', 'jwt_secret_key']:
         value = getattr(config, name)
         print(name + ': ' + ('configured' if (value.get_secret_value() if hasattr(value, 'get_secret_value') else value) else 'missing'))
     db, llm = DB(config), LLM(config)
     try:
+        await db.open()
+        await db.health()
+        print('PostgreSQL: reachable')
         for table in ['evaluation_rubrics', 'job_postings', 'resumes']:
             try:
                 rows = await db.select(table, select='id', limit=1)

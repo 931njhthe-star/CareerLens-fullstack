@@ -1,7 +1,9 @@
 import asyncio
 import threading
 from uuid import uuid4
+from types import SimpleNamespace
 import pytest
+from pydantic import SecretStr
 from fastapi.testclient import TestClient
 import app.main as main_module
 from app.main import app
@@ -10,6 +12,29 @@ from app.api.v1.routes.api import user
 
 @pytest.fixture(autouse=True)
 def prevent_background_worker_from_polling(monkeypatch):
+    class TestDB:
+        async def open(self): pass
+        async def health(self): return True
+        async def close(self): pass
+
+    class TestLLM:
+        async def close(self): pass
+
+    config = SimpleNamespace(
+        auth_enabled=True,
+        jwt_secret_key=SecretStr('test-only-secret-' + 'x' * 40),
+        jwt_issuer='careerlens-test',
+        cors_origins='http://localhost:3000',
+        access_token_seconds=900,
+        refresh_token_days=30,
+        admin_user_ids='',
+        upload_max_bytes=10 * 1024 * 1024,
+        max_document_tokens=20000,
+    )
+    monkeypatch.setattr(main_module, 'settings', lambda: config)
+    monkeypatch.setattr(main_module, 'DB', lambda _config: TestDB())
+    monkeypatch.setattr(main_module, 'LLM', lambda _config: TestLLM())
+
     async def idle_worker(*_args):
         await asyncio.Event().wait()
 
