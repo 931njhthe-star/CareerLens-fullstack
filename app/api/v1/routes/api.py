@@ -252,9 +252,12 @@ async def start(body: EvaluationRequest, request: Request, uid: str = Depends(us
             return {'run_id': existing[0]['id'], 'status': existing[0]['status']}
     companies = await db.select('companies', id=f"eq.{posting['company_id']}", limit=1) if posting.get('company_id') else []
     finance = await financial_context(db, posting.get('company_id'), companies[0]['name'] if companies else '')
-    runs = await db.rpc('create_evaluation', {'p_user': uid, 'p_resume': str(body.resume_id), 'p_job': str(body.job_posting_id), 'p_rubric': rubric['id'],
+    # The DB adapter sends this value as JSONB; normalize UUID-bearing rows first.
+    resume_snapshot = {**resume, 'id': str(resume['id']), 'user_id': str(resume['user_id'])}
+    posting_snapshot = {**posting, 'id': str(posting['id']), 'company_id': str(posting['company_id']) if posting.get('company_id') else None}
+    runs = await db.rpc('create_evaluation', {'p_user': uid, 'p_resume': str(body.resume_id), 'p_job': str(body.job_posting_id), 'p_rubric': str(rubric['id']),
         'p_key': idempotency_key, 'p_fingerprint': fingerprint, 'p_model': config.openai_model,
-        'p_snapshot': {'resume': resume, 'job': posting, 'resume_hash': digest(resume['original_text']), 'job_hash': digest(posting['description']), 'finance': finance,
+        'p_snapshot': {'resume': resume_snapshot, 'job': posting_snapshot, 'resume_hash': digest(resume['original_text']), 'job_hash': digest(posting['description']), 'finance': finance,
                        'model_config': {'model': config.openai_model, 'embedding_model': config.embedding_model, 'embedding_dimensions': config.embedding_dimensions}}})
     return {'run_id': str(runs[0]['id']), 'status': runs[0]['status'], 'status_url': f"/api/v1/evaluations/{runs[0]['id']}"}
 
