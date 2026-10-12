@@ -31,7 +31,8 @@ async def progress(db, run_id, stage, message, percent, status='running', update
 
 
 async def execute(db, llm, config, run, checkpointer=None):
-    run_id = run['id']
+    # psycopg returns UUID objects; graph state and JSON serializers expect text.
+    run_id = str(run['id'])
     total_started_at = datetime.now(timezone.utc)
     total_started = perf_counter()
     stored = await db.select('evaluation_input_snapshots', run_id=f'eq.{run_id}', limit=1)
