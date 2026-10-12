@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -9,6 +10,7 @@ from app.integrations.llm.client import LLM
 from app.api.v1.routes.api import router
 from workers.evaluation import run_worker
 
+log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -53,6 +55,8 @@ async def utf8_json_charset(request: Request, call_next):
 @app.exception_handler(RuntimeError)
 @app.exception_handler(ValueError)
 async def configuration_error(request: Request, exc: Exception):
+    log.error('Request rejected by configuration or stored data: path=%s error_type=%s reason=%s',
+              request.url.path, type(exc).__name__, str(exc))
     return JSONResponse({'detail': '서비스 설정 또는 입력 자료의 구조를 확인하세요.'}, status_code=503)
 
 

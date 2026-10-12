@@ -211,6 +211,14 @@ class DB:
         except Exception as exc:
             if isinstance(exc, DatabaseError):
                 raise
+            diagnostic = getattr(exc, 'diag', None)
+            primary = getattr(diagnostic, 'message_primary', None)
+            logger.error(
+                'PostgreSQL query failed: error_type=%s sqlstate=%s message=%s',
+                type(exc).__name__,
+                getattr(exc, 'sqlstate', None),
+                _redact_connection_message(primary, self.config.database_url.get_secret_value()) if primary else 'unavailable',
+            )
             raise DatabaseError(503) from None
 
     def _where(self, filters: dict[str, Any], prefix: str | None = None):
