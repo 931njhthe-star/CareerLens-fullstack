@@ -19,6 +19,9 @@ def career_postings_directory():
     configured = os.environ.get("CAREERLENS_JOB_POSTINGS_DIR", "").strip()
     if configured:
         return Path(configured).expanduser()
+    packaged = ROOT / "data" / "job_postings"
+    if packaged.is_dir():
+        return packaged
     return ROOT.parent.parent / "CareerLens_backup" / "app" / "modules" / "job_postings"
 
 
@@ -153,9 +156,12 @@ class NoRedirect(HTTPRedirectHandler):
 
 def create_app(backend_url=None):
     app = Flask(__name__, static_folder=None)
-    app.config.update(
-        MAX_CONTENT_LENGTH=11 * 1024 * 1024, TRUSTED_HOSTS=["127.0.0.1", "localhost", "[::1]"]
-    )
+    trusted_hosts = ["127.0.0.1", "localhost", "[::1]"]
+    for variable in ("VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+        host = os.environ.get(variable, "").strip()
+        if host and host not in trusted_hosts:
+            trusted_hosts.append(host)
+    app.config.update(MAX_CONTENT_LENGTH=11 * 1024 * 1024, TRUSTED_HOSTS=trusted_hosts)
     configured = backend_url if backend_url is not None else os.environ.get("BACKEND_URL", "")
     origin = validate_origin(configured) if configured else None
     public_origin = os.environ.get("FRONTEND_PUBLIC_ORIGIN", "")
@@ -286,6 +292,12 @@ def create_app(backend_url=None):
         return response
 
     return app
+
+
+# Vercel imports `server.py` as a WSGI entrypoint and looks for this variable.
+# The local command-line server below still builds its app after loading `.env`.
+if __name__ != "__main__":
+    app = create_app()
 
 
 if __name__ == "__main__":
