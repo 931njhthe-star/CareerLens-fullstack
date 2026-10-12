@@ -294,12 +294,6 @@ def create_app(backend_url=None):
     return app
 
 
-# Vercel imports `server.py` as a WSGI entrypoint and looks for this variable.
-# The local command-line server below still builds its app after loading `.env`.
-if __name__ != "__main__":
-    app = create_app()
-
-
 if __name__ == "__main__":
     load_local_env(ROOT.parent / ".env")
     parser = argparse.ArgumentParser()
@@ -311,9 +305,17 @@ if __name__ == "__main__":
     parser.add_argument("--host", default=os.environ.get("FRONTEND_HOST") or "127.0.0.1")
     parser.add_argument("--backend-url", default=None)
     args = parser.parse_args()
+    if args.backend_url is not None:
+        os.environ["BACKEND_URL"] = args.backend_url
+
+# Vercel imports `server.py` as a WSGI entrypoint and requires a top-level app.
+# CLI settings are loaded first above so both deployment modes share one app.
+app = create_app()
+
+if __name__ == "__main__":
     # Keep accepted resume request bodies below Waitress's disk-spool threshold.
     serve(
-        create_app(args.backend_url),
+        app,
         host=args.host,
         port=args.port,
         inbuf_overflow=12 * 1024 * 1024,

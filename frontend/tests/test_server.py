@@ -52,6 +52,12 @@ class ServerTests(unittest.TestCase):
         ):
             return server.create_app(origin)
 
+    def test_vercel_entrypoint_exports_the_existing_flask_app(self):
+        response = server.app.test_client().get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "text/html")
+
     def test_local_career_markdown_endpoint_returns_the_original_utf8_files(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "001.md").write_text(
