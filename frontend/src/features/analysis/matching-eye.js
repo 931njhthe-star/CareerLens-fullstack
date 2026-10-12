@@ -1290,7 +1290,7 @@ function generateUUID() {
 * @param {number} max - The max value.
 * @return {number} The clamped value.
 */
-function clamp$2(value, min, max) {
+function clamp$3(value, min, max) {
 	return Math.max(min, Math.min(max, value));
 }
 /**
@@ -1601,7 +1601,7 @@ var MathUtils = {
 	* @param {number} max - The max value.
 	* @return {number} The clamped value.
 	*/
-	clamp: clamp$2,
+	clamp: clamp$3,
 	/**
 	* Computes the Euclidean modulo of the given parameters that
 	* is `( ( n % m ) + m ) % m`.
@@ -2166,8 +2166,8 @@ var Vector2 = class Vector2 {
 	* @return {Vector2} A reference to this vector.
 	*/
 	clamp(min, max) {
-		this.x = clamp$2(this.x, min.x, max.x);
-		this.y = clamp$2(this.y, min.y, max.y);
+		this.x = clamp$3(this.x, min.x, max.x);
+		this.y = clamp$3(this.y, min.y, max.y);
 		return this;
 	}
 	/**
@@ -2181,8 +2181,8 @@ var Vector2 = class Vector2 {
 	* @return {Vector2} A reference to this vector.
 	*/
 	clampScalar(minVal, maxVal) {
-		this.x = clamp$2(this.x, minVal, maxVal);
-		this.y = clamp$2(this.y, minVal, maxVal);
+		this.x = clamp$3(this.x, minVal, maxVal);
+		this.y = clamp$3(this.y, minVal, maxVal);
 		return this;
 	}
 	/**
@@ -2197,7 +2197,7 @@ var Vector2 = class Vector2 {
 	*/
 	clampLength(min, max) {
 		const length = this.length();
-		return this.divideScalar(length || 1).multiplyScalar(clamp$2(length, min, max));
+		return this.divideScalar(length || 1).multiplyScalar(clamp$3(length, min, max));
 	}
 	/**
 	* The components of this vector are rounded down to the nearest integer value.
@@ -2321,7 +2321,7 @@ var Vector2 = class Vector2 {
 		const denominator = Math.sqrt(this.lengthSq() * v.lengthSq());
 		if (denominator === 0) return Math.PI / 2;
 		const theta = this.dot(v) / denominator;
-		return Math.acos(clamp$2(theta, -1, 1));
+		return Math.acos(clamp$3(theta, -1, 1));
 	}
 	/**
 	* Computes the distance from the given vector to this instance.
@@ -2829,7 +2829,7 @@ var Quaternion = class {
 	* @return {number} The angle in radians.
 	*/
 	angleTo(q) {
-		return 2 * Math.acos(Math.abs(clamp$2(this.dot(q), -1, 1)));
+		return 2 * Math.acos(Math.abs(clamp$3(this.dot(q), -1, 1)));
 	}
 	/**
 	* Rotates this quaternion by a given angular step to the given quaternion.
@@ -3571,9 +3571,9 @@ var Vector3 = class Vector3 {
 	* @return {Vector3} A reference to this vector.
 	*/
 	clamp(min, max) {
-		this.x = clamp$2(this.x, min.x, max.x);
-		this.y = clamp$2(this.y, min.y, max.y);
-		this.z = clamp$2(this.z, min.z, max.z);
+		this.x = clamp$3(this.x, min.x, max.x);
+		this.y = clamp$3(this.y, min.y, max.y);
+		this.z = clamp$3(this.z, min.z, max.z);
 		return this;
 	}
 	/**
@@ -3587,9 +3587,9 @@ var Vector3 = class Vector3 {
 	* @return {Vector3} A reference to this vector.
 	*/
 	clampScalar(minVal, maxVal) {
-		this.x = clamp$2(this.x, minVal, maxVal);
-		this.y = clamp$2(this.y, minVal, maxVal);
-		this.z = clamp$2(this.z, minVal, maxVal);
+		this.x = clamp$3(this.x, minVal, maxVal);
+		this.y = clamp$3(this.y, minVal, maxVal);
+		this.z = clamp$3(this.z, minVal, maxVal);
 		return this;
 	}
 	/**
@@ -3604,7 +3604,7 @@ var Vector3 = class Vector3 {
 	*/
 	clampLength(min, max) {
 		const length = this.length();
-		return this.divideScalar(length || 1).multiplyScalar(clamp$2(length, min, max));
+		return this.divideScalar(length || 1).multiplyScalar(clamp$3(length, min, max));
 	}
 	/**
 	* The components of this vector are rounded down to the nearest integer value.
@@ -3814,7 +3814,7 @@ var Vector3 = class Vector3 {
 		const denominator = Math.sqrt(this.lengthSq() * v.lengthSq());
 		if (denominator === 0) return Math.PI / 2;
 		const theta = this.dot(v) / denominator;
-		return Math.acos(clamp$2(theta, -1, 1));
+		return Math.acos(clamp$3(theta, -1, 1));
 	}
 	/**
 	* Computes the distance from the given vector to this instance.
@@ -5921,10 +5921,10 @@ var Vector4 = class Vector4 {
 	* @return {Vector4} A reference to this vector.
 	*/
 	clamp(min, max) {
-		this.x = clamp$2(this.x, min.x, max.x);
-		this.y = clamp$2(this.y, min.y, max.y);
-		this.z = clamp$2(this.z, min.z, max.z);
-		this.w = clamp$2(this.w, min.w, max.w);
+		this.x = clamp$3(this.x, min.x, max.x);
+		this.y = clamp$3(this.y, min.y, max.y);
+		this.z = clamp$3(this.z, min.z, max.z);
+		this.w = clamp$3(this.w, min.w, max.w);
 		return this;
 	}
 	/**
@@ -5938,10 +5938,10 @@ var Vector4 = class Vector4 {
 	* @return {Vector4} A reference to this vector.
 	*/
 	clampScalar(minVal, maxVal) {
-		this.x = clamp$2(this.x, minVal, maxVal);
-		this.y = clamp$2(this.y, minVal, maxVal);
-		this.z = clamp$2(this.z, minVal, maxVal);
-		this.w = clamp$2(this.w, minVal, maxVal);
+		this.x = clamp$3(this.x, minVal, maxVal);
+		this.y = clamp$3(this.y, minVal, maxVal);
+		this.z = clamp$3(this.z, minVal, maxVal);
+		this.w = clamp$3(this.w, minVal, maxVal);
 		return this;
 	}
 	/**
@@ -5956,7 +5956,7 @@ var Vector4 = class Vector4 {
 	*/
 	clampLength(min, max) {
 		const length = this.length();
-		return this.divideScalar(length || 1).multiplyScalar(clamp$2(length, min, max));
+		return this.divideScalar(length || 1).multiplyScalar(clamp$3(length, min, max));
 	}
 	/**
 	* The components of this vector are rounded down to the nearest integer value.
@@ -7941,7 +7941,7 @@ var Euler = class Euler {
 		const m31 = te[2], m32 = te[6], m33 = te[10];
 		switch (order) {
 			case "XYZ":
-				this._y = Math.asin(clamp$2(m13, -1, 1));
+				this._y = Math.asin(clamp$3(m13, -1, 1));
 				if (Math.abs(m13) < .9999999) {
 					this._x = Math.atan2(-m23, m33);
 					this._z = Math.atan2(-m12, m11);
@@ -7951,7 +7951,7 @@ var Euler = class Euler {
 				}
 				break;
 			case "YXZ":
-				this._x = Math.asin(-clamp$2(m23, -1, 1));
+				this._x = Math.asin(-clamp$3(m23, -1, 1));
 				if (Math.abs(m23) < .9999999) {
 					this._y = Math.atan2(m13, m33);
 					this._z = Math.atan2(m21, m22);
@@ -7961,7 +7961,7 @@ var Euler = class Euler {
 				}
 				break;
 			case "ZXY":
-				this._x = Math.asin(clamp$2(m32, -1, 1));
+				this._x = Math.asin(clamp$3(m32, -1, 1));
 				if (Math.abs(m32) < .9999999) {
 					this._y = Math.atan2(-m31, m33);
 					this._z = Math.atan2(-m12, m22);
@@ -7971,7 +7971,7 @@ var Euler = class Euler {
 				}
 				break;
 			case "ZYX":
-				this._y = Math.asin(-clamp$2(m31, -1, 1));
+				this._y = Math.asin(-clamp$3(m31, -1, 1));
 				if (Math.abs(m31) < .9999999) {
 					this._x = Math.atan2(m32, m33);
 					this._z = Math.atan2(m21, m11);
@@ -7981,7 +7981,7 @@ var Euler = class Euler {
 				}
 				break;
 			case "YZX":
-				this._z = Math.asin(clamp$2(m21, -1, 1));
+				this._z = Math.asin(clamp$3(m21, -1, 1));
 				if (Math.abs(m21) < .9999999) {
 					this._x = Math.atan2(-m23, m22);
 					this._y = Math.atan2(-m31, m11);
@@ -7991,7 +7991,7 @@ var Euler = class Euler {
 				}
 				break;
 			case "XZY":
-				this._z = Math.asin(-clamp$2(m12, -1, 1));
+				this._z = Math.asin(-clamp$3(m12, -1, 1));
 				if (Math.abs(m12) < .9999999) {
 					this._x = Math.atan2(m32, m22);
 					this._y = Math.atan2(m13, m11);
@@ -9940,8 +9940,8 @@ var Color = class {
 	*/
 	setHSL(h, s, l, colorSpace = ColorManagement.workingColorSpace) {
 		h = euclideanModulo(h, 1);
-		s = clamp$2(s, 0, 1);
-		l = clamp$2(l, 0, 1);
+		s = clamp$3(s, 0, 1);
+		l = clamp$3(l, 0, 1);
 		if (s === 0) this.r = this.g = this.b = l;
 		else {
 			const p = l <= .5 ? l * (1 + s) : l + s - l * s;
@@ -10094,7 +10094,7 @@ var Color = class {
 	*/
 	getHex(colorSpace = SRGBColorSpace) {
 		ColorManagement.workingToColorSpace(_color.copy(this), colorSpace);
-		return Math.round(clamp$2(_color.r * 255, 0, 255)) * 65536 + Math.round(clamp$2(_color.g * 255, 0, 255)) * 256 + Math.round(clamp$2(_color.b * 255, 0, 255));
+		return Math.round(clamp$3(_color.r * 255, 0, 255)) * 65536 + Math.round(clamp$3(_color.g * 255, 0, 255)) * 256 + Math.round(clamp$3(_color.b * 255, 0, 255));
 	}
 	/**
 	* Returns the hexadecimal value of this color as a string (for example, 'FFFFFF').
@@ -33411,7 +33411,7 @@ var groups = [
 	"role",
 	"report"
 ];
-var clamp$1 = (value) => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+var clamp$2 = (value) => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 var random = (index, salt) => {
 	let value = Math.imul(index + 1, 73244475) ^ Math.imul(salt + 17, 668265261);
 	value = Math.imul(value ^ value >>> 16, 73244475);
@@ -33439,7 +33439,7 @@ function createAnalysisFibres(count = 180) {
 }
 /** All needles stay below their endpoint until the verified global value is 1. */
 function fibreGrowth(fibre, progress) {
-	const value = clamp$1(progress);
+	const value = clamp$2(progress);
 	const eased = Math.min(1, Math.max(0, (value - fibre.onset) / (1 - fibre.onset))) ** fibre.easing;
 	return Math.min(value < 1 ? .999999 : 1, eased * eased * (3 - 2 * eased));
 }
@@ -33453,7 +33453,7 @@ var fibreGrowthGLSL = `
   }
 `;
 function fibrePoint(fibre, along) {
-	const value = clamp$1(along);
+	const value = clamp$2(along);
 	const radius = fibre.innerRadius + fibre.length * value;
 	const bend = fibre.bend * Math.sin(Math.PI * value);
 	return [Math.cos(fibre.angle) * radius - Math.sin(fibre.angle) * bend, Math.sin(fibre.angle) * radius + Math.cos(fibre.angle) * bend];
@@ -33781,9 +33781,9 @@ var AnalysisEyeRenderer = class {
 var MIN_ANALYSIS_PRESENTATION_MS = 4e3;
 var SETTLE_MS = 240;
 var RUNNING_RISE_MS = 1600;
-var clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
+var clamp$1 = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 var smoothstep = (value) => {
-	const t = clamp(value);
+	const t = clamp$1(value);
 	return t * t * (3 - 2 * t);
 };
 /** Presentation progress is deliberately separate from server stage completion. */
@@ -33831,10 +33831,10 @@ var AnalysisTimeline = class {
 		if (this.pausedAt !== null) return this.pausedProgress;
 		if (this.completedAt === null) return this.running(now);
 		const duration = this.completionEnd - this.completedAt;
-		const t = clamp((now - this.completedAt) / duration);
+		const t = clamp$1((now - this.completedAt) / duration);
 		const distance = 1 - this.completionFrom;
 		const tangent = Math.min(this.completionVelocity * duration, distance * 2.5);
-		return clamp((2 * t ** 3 - 3 * t ** 2 + 1) * this.completionFrom + (t ** 3 - 2 * t ** 2 + t) * tangent + (-2 * t ** 3 + 3 * t ** 2));
+		return clamp$1((2 * t ** 3 - 3 * t ** 2 + 1) * this.completionFrom + (t ** 3 - 2 * t ** 2 + t) * tangent + (-2 * t ** 3 + 3 * t ** 2));
 	}
 	get readyAt() {
 		return this.completedAt === null ? null : this.completionEnd;
@@ -34095,6 +34095,13 @@ var analysisStyles = `
     width: 100%;
     height: 100%;
   }
+  .cl-analysis-eye__entrance {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
   .cl-analysis-eye__leaders {
     position: absolute;
     inset: 0;
@@ -34340,6 +34347,242 @@ var analysisStyles = `
     }
   }
 `;
+var TAU = Math.PI * 2;
+var angleOf = (angle) => (angle % TAU + TAU) % TAU;
+var clamp = (value) => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+/** Stable angular bindings, shared by the filled surface and its callout anchors. */
+function createLiquidKnots(assignments) {
+	return assignments.map((assignment) => ({
+		assignment,
+		angle: angleOf(assignment.fibre.angle)
+	})).sort((a, b) => a.angle - b.angle);
+}
+/** A single periodic water frontier, expanding radially out of an empty pupil.
+* The twelve heights represent presentation progress, never actual server scores.
+*/
+function liquidFrontier(knots, angle, progress, elapsedMs = 0, reducedMotion = false) {
+	const value = clamp(progress);
+	const theta = Number.isFinite(angle) ? angleOf(angle) : 0;
+	let growth = value;
+	if (knots.length) {
+		let right = knots.findIndex((knot) => knot.angle >= theta);
+		if (right < 0) right = 0;
+		const left = (right + knots.length - 1) % knots.length;
+		const span = angleOf(knots[right].angle - knots[left].angle) || TAU;
+		const blend = smoothstep(angleOf(theta - knots[left].angle) / span);
+		const start = fibreGrowth(knots[left].assignment.fibre, value);
+		growth = start + (fibreGrowth(knots[right].assignment.fibre, value) - start) * blend;
+	}
+	const time = reducedMotion || !Number.isFinite(elapsedMs) ? 0 : elapsedMs / 1e3;
+	const ripple = reducedMotion ? 0 : Math.sin(theta * 9 - time * 1.65) * .028 + Math.sin(theta * 17 + time * 1.1) * .011;
+	growth = clamp(growth + ripple * 4 * growth * (1 - growth));
+	if (value < 1) growth = Math.min(growth, .999999);
+	const radius = 62 + 102 * growth;
+	return {
+		radius,
+		growth,
+		point: [Math.cos(theta) * radius, Math.sin(theta) * radius]
+	};
+}
+function liquidPaths(knots, progress, elapsedMs, reducedMotion) {
+	const frontier = `M${Array.from({ length: 240 }, (_, index) => {
+		const { point } = liquidFrontier(knots, index / 240 * TAU, progress, elapsedMs, reducedMotion);
+		return `${point[0].toFixed(2)} ${(-point[1]).toFixed(2)}`;
+	}).join("L")}Z`;
+	const r = 62;
+	return {
+		area: `${frontier}${`M${r} 0A${r} ${r} 0 1 0 -62 0A${r} ${r} 0 1 0 ${r} 0Z`}`,
+		frontier
+	};
+}
+function projectLiquidTip(knots, angle, progress, elapsedMs, width, height, fold = 0, reducedMotion = false) {
+	const { point, growth } = liquidFrontier(knots, angle, progress, elapsedMs, reducedMotion);
+	const view = analysisViewport(width, height);
+	return {
+		x: (point[0] / view.halfWidth + 1) * view.width / 2,
+		y: (1 - point[1] * analysisFoldScale(fold, reducedMotion) / view.halfHeight) * view.height / 2,
+		growth
+	};
+}
+function eyeEntranceFrame(elapsedMs, options, reducedMotion = false) {
+	const duration = !options || reducedMotion ? 0 : Math.max(300, Math.min(1200, Number.isFinite(options.durationMs) ? options.durationMs : 720));
+	const delay = !options || reducedMotion ? 0 : Math.max(0, Math.min(1500, Number.isFinite(options.delayMs) ? options.delayMs : 0));
+	const elapsed = Math.max(0, (Number.isFinite(elapsedMs) ? elapsedMs : 0) - delay);
+	const phase = duration ? Math.min(1, elapsed / duration) : 1;
+	const eyeElapsed = Math.max(0, elapsed - duration);
+	const initialRotation = Number.isFinite(options?.rotation) ? options.rotation : 0;
+	return {
+		duration,
+		delay,
+		eyeElapsed,
+		calloutElapsed: eyeElapsed * MIN_ANALYSIS_PRESENTATION_MS / (MIN_ANALYSIS_PRESENTATION_MS - duration - delay),
+		fillReveal: duration ? smoothstep((elapsed - duration) / 360) : 1,
+		radius: 126 - 65 * smoothstep((phase - .22) / .78),
+		rotation: initialRotation + phase * 2.6 + phase ** 3 * 15,
+		opacity: duration ? 1 - smoothstep((elapsed - duration) / 200) : 0,
+		synchronized: phase === 1
+	};
+}
+//#endregion
+//#region src/analysis-liquid-renderer.ts
+var ns$1 = "http://www.w3.org/2000/svg";
+var nextId = 0;
+function svg(tag, attrs = {}) {
+	const node = document.createElementNS(ns$1, tag);
+	for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+	return node;
+}
+/** Filled annular water in an SVG: identical geometry with or without WebGL. */
+var AnalysisLiquidRenderer = class {
+	knots;
+	svg = svg("svg", {
+		class: "cl-analysis-eye__fallback",
+		"aria-hidden": "true",
+		preserveAspectRatio: "xMidYMid meet"
+	});
+	eye = svg("g");
+	area;
+	frontier;
+	outlines;
+	pausedTime = 0;
+	constructor(knots) {
+		this.knots = knots;
+		const id = `cl-eye-water-${++nextId}`;
+		const defs = svg("defs");
+		const gradient = svg("linearGradient", {
+			id,
+			x1: "-150",
+			y1: "-150",
+			x2: "130",
+			y2: "170",
+			gradientUnits: "userSpaceOnUse"
+		});
+		gradient.append(svg("stop", {
+			offset: "0",
+			"stop-color": "var(--eye-highlight, #35d8e7)"
+		}), svg("stop", {
+			offset: ".42",
+			"stop-color": "var(--eye-fiber, #2361ed)"
+		}), svg("stop", {
+			offset: "1",
+			"stop-color": "var(--eye-outline, #1748be)"
+		}));
+		defs.append(gradient);
+		this.area = svg("path", {
+			fill: `url(#${id})`,
+			"fill-rule": "evenodd",
+			"fill-opacity": ".84",
+			"data-liquid-area": "true"
+		});
+		this.frontier = svg("path", {
+			fill: "none",
+			stroke: "var(--eye-highlight, #35d8e7)",
+			"stroke-width": "1.5",
+			"stroke-opacity": ".86",
+			"data-liquid-frontier": "true"
+		});
+		const outer = svg("circle", {
+			r: String(164),
+			stroke: "var(--eye-outline, #1748be)",
+			"stroke-opacity": ".2",
+			"stroke-width": ".8",
+			fill: "none",
+			pathLength: "100"
+		});
+		const pupil = svg("circle", {
+			r: String(61),
+			stroke: `url(#${id})`,
+			"stroke-width": "1.8",
+			fill: "none",
+			pathLength: "100"
+		});
+		const lids = ["M-352 0Q0-365 352 0", "M352 0Q0 365-352 0"].map((d) => svg("path", {
+			d,
+			stroke: `url(#${id})`,
+			"stroke-width": "1.8",
+			"stroke-opacity": ".82",
+			fill: "none",
+			pathLength: "100"
+		}));
+		this.outlines = [
+			...lids,
+			outer,
+			pupil
+		];
+		this.eye.append(outer, this.area, this.frontier, pupil, ...lids);
+		this.svg.append(defs, this.eye);
+	}
+	resize(width, height) {
+		const { halfWidth, halfHeight } = analysisViewport(width, height);
+		this.svg.setAttribute("viewBox", `${-halfWidth} ${-halfHeight} ${halfWidth * 2} ${halfHeight * 2}`);
+	}
+	render(elapsedMs, progress, fold, reducedMotion, failed) {
+		if (!failed) this.pausedTime = elapsedMs;
+		const reveal = reducedMotion ? 1 : smoothstep(elapsedMs / 480);
+		const paths = liquidPaths(this.knots, progress, this.pausedTime, reducedMotion);
+		this.area.setAttribute("d", paths.area);
+		this.frontier.setAttribute("d", paths.frontier);
+		this.area.setAttribute("opacity", String(reveal));
+		this.frontier.setAttribute("opacity", String(reveal * (progress > 0 ? 1 : 0)));
+		this.area.style.filter = failed ? "saturate(.35)" : "";
+		this.outlines.forEach((outline) => outline.setAttribute("stroke-dasharray", `${100 * (reducedMotion ? 1 : smoothstep(elapsedMs / 720))} 100`));
+		this.eye.setAttribute("transform", `scale(1 ${analysisFoldScale(fold, reducedMotion)})`);
+	}
+	dispose() {
+		this.svg.remove();
+	}
+};
+/** Ring keeps turning as it accelerates into the fixed pupil, before the lids draw. */
+function createEntranceRing() {
+	const root = svg("svg", {
+		class: "cl-analysis-eye__entrance",
+		"aria-hidden": "true",
+		preserveAspectRatio: "xMidYMid meet"
+	});
+	const ring = svg("g");
+	ring.append(svg("circle", {
+		r: "61",
+		fill: "none",
+		stroke: "var(--eye-fiber, #2361ed)",
+		"stroke-width": "3",
+		"stroke-opacity": ".4"
+	}));
+	for (const [start, length, color, width] of [
+		[
+			0,
+			2.7,
+			"var(--eye-fiber, #2361ed)",
+			4
+		],
+		[
+			3.3,
+			1.4,
+			"var(--eye-highlight, #35d8e7)",
+			4
+		],
+		[
+			5,
+			.65,
+			"var(--eye-highlight, #35d8e7)",
+			2
+		]
+	]) {
+		const end = start + length;
+		const d = `M${Math.cos(start) * 61} ${Math.sin(start) * 61}A61 61 0 0 1 ${Math.cos(end) * 61} ${Math.sin(end) * 61}`;
+		ring.append(svg("path", {
+			d,
+			fill: "none",
+			stroke: color,
+			"stroke-width": String(width),
+			"stroke-linecap": "round"
+		}));
+	}
+	root.append(ring);
+	return {
+		svg: root,
+		ring
+	};
+}
 //#endregion
 //#region src/analysis-component.ts
 var mounts$1 = /* @__PURE__ */ new WeakMap();
@@ -34457,9 +34700,11 @@ function mountAnalysisEye(container, initial, options = {}) {
 	let snapshot = normalizeAnalysis(initial);
 	const transparentSurface = options.surface === "overlay";
 	const purpose = options.purpose === "report" ? "report" : "preparation";
+	const liquid = options.gauge === "liquid";
 	const panelFibres = createAnalysisFibres(fibreCountForWidth(container.clientWidth));
 	let readouts = analysisReadouts(initial, snapshot, purpose);
 	const assignments = assignCriterionFibres(readouts.map(({ id }, index) => purpose === "report" ? id : `topic-${index}`), panelFibres, createAnalysisRunSeed());
+	const liquidKnots = createLiquidKnots(assignments);
 	let compact = container.clientWidth < 700;
 	const abort = new AbortController();
 	const { signal } = abort;
@@ -34481,6 +34726,7 @@ function mountAnalysisEye(container, initial, options = {}) {
 	}
 	root.dataset.surface = transparentSurface ? "overlay" : "card";
 	root.dataset.purpose = purpose;
+	root.dataset.gauge = liquid ? "liquid" : "radial";
 	const style = element$1("style");
 	style.textContent = analysisStyles;
 	const scene = element$1("div", "cl-analysis-eye__scene");
@@ -34512,14 +34758,17 @@ function mountAnalysisEye(container, initial, options = {}) {
 	const percent = element$1("strong");
 	percent.setAttribute("aria-hidden", "true");
 	summary.append(summaryMessage, percent);
-	const note = element$1("p", "cl-analysis-eye__note", options.palette?.fiber ? "선과 게이지는 시각화 진행이며, 항목별 평가 결과가 아닙니다." : "금빛 선과 게이지는 시각화 진행이며, 항목별 평가 결과가 아닙니다.");
+	const note = element$1("p", "cl-analysis-eye__note", liquid ? "물결과 게이지는 시각화 진행이며, 항목별 평가 결과가 아닙니다." : options.palette?.fiber ? "선과 게이지는 시각화 진행이며, 항목별 평가 결과가 아닙니다." : "금빛 선과 게이지는 시각화 진행이며, 항목별 평가 결과가 아닙니다.");
 	visual.append(canvas);
+	const entrance = options.entrance ? createEntranceRing() : null;
+	if (entrance) visual.append(entrance.svg);
 	scene.append(visual, leaders, panelList);
 	root.append(style, scene, summary, note, accessibleStages, progress);
 	container.replaceChildren(root);
 	let disposed = false;
 	let visible = true;
 	let renderer = null;
+	let liquidRenderer = null;
 	let fallback = null;
 	let frameRequest = 0;
 	let finishTimer = 0;
@@ -34530,6 +34779,8 @@ function mountAnalysisEye(container, initial, options = {}) {
 	let resolveFinish = null;
 	let rejectFinish = null;
 	const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+	let waveElapsed = 0;
+	let motionElapsed = 0;
 	function stopFrame() {
 		if (frameRequest) cancelAnimationFrame(frameRequest);
 		frameRequest = 0;
@@ -34544,10 +34795,11 @@ function mountAnalysisEye(container, initial, options = {}) {
 		resizeFallback();
 	}
 	function resizeFallback() {
-		if (!fallback) return;
 		const bounds = visual.getBoundingClientRect();
 		const { halfWidth, halfHeight } = analysisViewport(bounds.width, bounds.height);
-		fallback.svg.setAttribute("viewBox", `${-halfWidth} ${-halfHeight} ${halfWidth * 2} ${halfHeight * 2}`);
+		liquidRenderer?.resize(bounds.width, bounds.height);
+		entrance?.svg.setAttribute("viewBox", `${-halfWidth} ${-halfHeight} ${halfWidth * 2} ${halfHeight * 2}`);
+		fallback?.svg.setAttribute("viewBox", `${-halfWidth} ${-halfHeight} ${halfWidth * 2} ${halfHeight * 2}`);
 	}
 	function placeLeader(panel, fill, fold) {
 		const bounds = scene.getBoundingClientRect();
@@ -34559,7 +34811,7 @@ function mountAnalysisEye(container, initial, options = {}) {
 		const isTop = panel.root.dataset.corner?.includes("top");
 		const startX = compact ? (box.left + box.right) / 2 - bounds.left : isLeft ? box.right - bounds.left : box.left - bounds.left;
 		const startY = compact ? box.top - bounds.top : isTop ? box.bottom - bounds.top - 19 : box.top - bounds.top + 19;
-		const projected = projectFibreTip(panel.fibre, fill, visualBounds.width, visualBounds.height, fold, reducedMotion.matches);
+		const projected = liquid ? projectLiquidTip(liquidKnots, panel.fibre.angle, fill, waveElapsed, visualBounds.width, visualBounds.height, fold, reducedMotion.matches) : projectFibreTip(panel.fibre, fill, visualBounds.width, visualBounds.height, fold, reducedMotion.matches);
 		const endX = visualBounds.left - bounds.left + projected.x;
 		const endY = visualBounds.top - bounds.top + projected.y;
 		const elbowX = startX + (isLeft ? 22 : -22);
@@ -34568,8 +34820,8 @@ function mountAnalysisEye(container, initial, options = {}) {
 		panel.anchor.setAttribute("cy", String(endY));
 		panel.anchor.dataset.fibreId = String(panel.fibre.id);
 	}
-	function renderPanels(now, fold, fill) {
-		const elapsed = now - startedAt;
+	function renderPanels(now, fold, fill, reveal = 1, calloutElapsed) {
+		const elapsed = calloutElapsed ?? now - startedAt;
 		panels.forEach((panel, index) => {
 			const report = purpose === "report";
 			const active = !compact || index < (report ? 2 : 1);
@@ -34593,13 +34845,13 @@ function mountAnalysisEye(container, initial, options = {}) {
 			}
 			const stage = snapshot.stages.find((item) => item.id === panel.readout?.stageId);
 			panel.state.textContent = report ? panel.readout?.axis || "" : stage?.status === "error" ? "확인 필요" : stage?.status === "complete" ? "확인 완료" : "확인 중";
-			const opacity = snapshot.hasError || reducedMotion.matches && !report ? 1 - fold : cycle.opacity * (1 - fold);
+			const opacity = reveal * (snapshot.hasError || reducedMotion.matches && !report ? 1 - fold : cycle.opacity * (1 - fold));
 			panel.root.style.opacity = opacity.toFixed(3);
 			panel.root.style.transform = reducedMotion.matches ? "" : `translate3d(${((1 - opacity) * (panel.root.dataset.corner?.includes("left") ? -5 : 5)).toFixed(2)}px, 0, 0) scale(${(.985 + opacity * .015).toFixed(4)})`;
 			panel.root.style.filter = reducedMotion.matches ? "" : `blur(${((1 - opacity) * 1.1).toFixed(2)}px)`;
 			panel.leader.style.opacity = (opacity * .85).toFixed(3);
 			panel.line.style.strokeDashoffset = reducedMotion.matches ? "0" : String(1 - opacity);
-			const growth = panel.fibre ? fibreSegment(panel.fibre, fill).growth : 0;
+			const growth = panel.fibre ? liquid ? liquidFrontier(liquidKnots, panel.fibre.angle, fill, waveElapsed, reducedMotion.matches).growth : fibreSegment(panel.fibre, fill).growth : 0;
 			panel.root.dataset.gaugeProgress = (growth * 100).toFixed(2);
 			panel.fill.style.transform = `scaleX(${growth.toFixed(6)})`;
 			placeLeader(panel, fill, fold);
@@ -34619,25 +34871,35 @@ function mountAnalysisEye(container, initial, options = {}) {
 	}
 	function draw(now = performance.now()) {
 		if (disposed) return;
-		const fill = timeline.progress(now);
 		const fold = finishRequested && foldOnFinish ? timeline.fold(now) : 0;
 		const elapsed = Math.max(0, now - startedAt);
-		const presented = (groupFibreProgress(panelFibres, fill, "resume") + groupFibreProgress(panelFibres, fill, "role") + groupFibreProgress(panelFibres, fill, "report")) / 3;
+		if (!snapshot.hasError) motionElapsed = elapsed;
+		const entranceFrame = eyeEntranceFrame(motionElapsed, options.entrance, reducedMotion.matches);
+		const eyeElapsed = entranceFrame.eyeElapsed;
+		const fill = timeline.progress(now) * entranceFrame.fillReveal;
+		if (!snapshot.hasError) waveElapsed = eyeElapsed;
+		const presented = liquid && liquidKnots.length ? liquidKnots.reduce((total, knot) => total + liquidFrontier(liquidKnots, knot.angle, fill, waveElapsed, true).growth, 0) / liquidKnots.length : (groupFibreProgress(panelFibres, fill, "resume") + groupFibreProgress(panelFibres, fill, "role") + groupFibreProgress(panelFibres, fill, "report")) / 3;
 		const percentValue = Math.floor(presented * 100);
 		percent.textContent = `${percentValue}%`;
 		progress.setAttribute("aria-valuenow", String(percentValue));
 		container.dataset.visualProgress = (presented * 100).toFixed(2);
-		container.dataset.presentationState = snapshot.hasError ? "error" : fold > 0 ? "folding" : elapsed < 720 ? "drawing" : snapshot.complete ? "finishing" : "analyzing";
+		container.dataset.presentationState = snapshot.hasError ? "error" : fold > 0 ? "folding" : !entranceFrame.synchronized ? "synchronizing" : eyeElapsed < 720 ? "drawing" : snapshot.complete ? "finishing" : "analyzing";
 		visual.style.opacity = (reducedMotion.matches ? 1 - fold : 1 - smoothstep((fold - .65) / .35)).toFixed(3);
-		renderPanels(now, fold, fill);
+		renderPanels(now, fold, fill, reducedMotion.matches ? 1 : smoothstep(eyeElapsed / 180), purpose === "report" ? entranceFrame.calloutElapsed : void 0);
 		if (visible && !document.hidden) {
+			if (entrance) {
+				entrance.svg.style.opacity = String(entranceFrame.opacity * (1 - fold));
+				entrance.svg.style.display = entranceFrame.opacity ? "" : "none";
+				entrance.ring.setAttribute("transform", `rotate(${entranceFrame.rotation * 180 / Math.PI}) scale(${entranceFrame.radius / 61})`);
+			}
+			liquidRenderer?.render(eyeElapsed, fill, fold, reducedMotion.matches, snapshot.hasError);
 			try {
-				renderer?.render(elapsed, fill, fold, reducedMotion.matches, snapshot.hasError);
+				renderer?.render(eyeElapsed, fill, fold, reducedMotion.matches, snapshot.hasError);
 			} catch {
 				useFallback();
 			}
 			if (fallback) {
-				fallback.outlines.forEach((outline) => outline.setAttribute("stroke-dasharray", `${100 * (reducedMotion.matches ? 1 : smoothstep(elapsed / 720))} 100`));
+				fallback.outlines.forEach((outline) => outline.setAttribute("stroke-dasharray", `${100 * (reducedMotion.matches ? 1 : smoothstep(eyeElapsed / 720))} 100`));
 				fallback.fibres.forEach(({ descriptor, path, tip }) => {
 					const segment = fibreSegment(descriptor, fill);
 					const normal = [-Math.sin(descriptor.angle), Math.cos(descriptor.angle)];
@@ -34659,10 +34921,10 @@ function mountAnalysisEye(container, initial, options = {}) {
 					];
 					path.setAttribute("d", `M${steps.map((step) => edge(step, 1)).join("L")}L${steps.slice().reverse().map((step) => edge(step, -1)).join("L")}Z`);
 					path.setAttribute("fill", snapshot.hasError ? "#ad7560" : "var(--eye-fiber, #d9b77c)");
-					path.setAttribute("opacity", String(segment.growth <= 1e-5 ? 0 : descriptor.brightness * .78 * (reducedMotion.matches ? 1 : Math.min(1, elapsed / 480))));
+					path.setAttribute("opacity", String(segment.growth <= 1e-5 ? 0 : descriptor.brightness * .78 * (reducedMotion.matches ? 1 : Math.min(1, eyeElapsed / 480))));
 					tip.setAttribute("cx", segment.tip[0].toFixed(2));
 					tip.setAttribute("cy", (-segment.tip[1]).toFixed(2));
-					tip.setAttribute("opacity", String(reducedMotion.matches || snapshot.hasError || segment.growth < .01 ? 0 : Math.min(.4, (1 - fill) * 20)));
+					tip.setAttribute("opacity", String(reducedMotion.matches || snapshot.hasError || eyeElapsed <= 0 || segment.growth < .01 ? 0 : Math.min(.4, (1 - fill) * 20)));
 				});
 				fallback.group.setAttribute("transform", `scale(1 ${analysisFoldScale(fold, reducedMotion.matches)})`);
 			}
@@ -34741,13 +35003,21 @@ function mountAnalysisEye(container, initial, options = {}) {
 			draw();
 		}
 	}, { signal });
-	try {
-		renderer = new AnalysisEyeRenderer(canvas, transparentSurface, panelFibres, options.palette);
-		container.dataset.renderer = "webgl";
-		const bounds = visual.getBoundingClientRect();
-		renderer.resize(Math.max(1, bounds.width), Math.max(1, bounds.height));
-	} catch {
-		useFallback();
+	if (liquid) {
+		liquidRenderer = new AnalysisLiquidRenderer(liquidKnots);
+		canvas.replaceWith(liquidRenderer.svg);
+		container.dataset.renderer = "svg-liquid";
+		resizeFallback();
+	} else {
+		try {
+			renderer = new AnalysisEyeRenderer(canvas, transparentSurface, panelFibres, options.palette);
+			container.dataset.renderer = "webgl";
+			const bounds = visual.getBoundingClientRect();
+			renderer.resize(Math.max(1, bounds.width), Math.max(1, bounds.height));
+		} catch {
+			useFallback();
+		}
+		resizeFallback();
 	}
 	const resize = new ResizeObserver(() => {
 		if (disposed) return;
@@ -34789,6 +35059,8 @@ function mountAnalysisEye(container, initial, options = {}) {
 		intersection.disconnect();
 		renderer?.dispose();
 		renderer = null;
+		liquidRenderer?.dispose();
+		liquidRenderer = null;
 		root.remove();
 		if (mounts$1.get(container) === dispose) {
 			mounts$1.delete(container);
@@ -35513,4 +35785,4 @@ function mountMatchingEye(container, matching) {
 	return dispose;
 }
 //#endregion
-export { ScorePyramidRenderer, mountAnalysisEye, mountMatchingEye };
+export { ScorePyramidRenderer, analysisViewport, eyeEntranceFrame, mountAnalysisEye, mountMatchingEye };

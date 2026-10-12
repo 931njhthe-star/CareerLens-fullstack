@@ -1,5 +1,6 @@
 import { pyramidAxes, pyramidPreview, pyramidTransition } from './status-radar-data.js';
 import { scorePyramidPalette } from '../../shared/design/selected-theme.js';
+import { displayScore } from './report-presentation.js';
 
 const mounts = new WeakMap();
 const NS = 'http://www.w3.org/2000/svg';
@@ -63,10 +64,25 @@ function fallbackScene() {
     'stroke-width': '.8',
     opacity: '.7',
   });
-  root.append(...glass, ...faces, wire);
+  const rays = VERTICES.map((_, index) =>
+    svg('line', {
+      class: 'score-pyramid__fallback-ray',
+      'data-axis-index': index,
+      'stroke-width': '1.4',
+      'stroke-linecap': 'round',
+    }),
+  );
+  const markers = VERTICES.map((_, index) =>
+    svg('circle', {
+      class: 'score-pyramid__fallback-point',
+      'data-axis-index': index,
+      r: '3.2',
+    }),
+  );
+  root.append(...glass, ...faces, wire, ...rays, ...markers);
   return {
     root,
-    draw(scores, colorMix, yaw, pitch, zoom, showValues = true, width = 340, height = 310) {
+    draw(scores, colorMix, yaw, pitch, zoom, width = 340, height = 310) {
       root.setAttribute('viewBox', `0 0 ${width} ${height}`);
       const project = ([x, y, z], scale = 1) => {
         x *= scale;
@@ -122,7 +138,12 @@ function fallbackScene() {
         depth: point.depth,
       });
       const outer = VERTICES.map((v) => frame(project(v)));
-      const points = showValues ? VERTICES.map((v, i) => frame(project(v, scores[i] / 100))) : [];
+      // Null is an absent vertex, not a zero-length value at the center.
+      const points = VERTICES.map((v, i) =>
+        Number.isFinite(scores[i]) ? frame(project(v, scores[i] / 100)) : null,
+      );
+      const complete = points.every((point) => point !== null);
+      const center = frame(project([0, 0, 0]));
       glass.forEach((face, index) => {
         const depth = FACES[index].reduce((sum, i) => sum + outer[i].depth, 0) / 3;
         face.setAttribute(
@@ -136,8 +157,9 @@ function fallbackScene() {
         EDGES.map(([a, b]) => `M${outer[a].x},${outer[a].y}L${outer[b].x},${outer[b].y}`).join(' '),
       );
       faces.forEach((face, index) => {
-        face.style.display = showValues ? '' : 'none';
-        if (!showValues) return;
+        // A filled value solid requires all four measured endpoints.
+        face.style.display = complete ? '' : 'none';
+        if (!complete) return;
         face.setAttribute(
           'points',
           FACES[index].map((i) => `${points[i].x},${points[i].y}`).join(' '),
@@ -146,6 +168,23 @@ function fallbackScene() {
         face.setAttribute('fill-opacity', String(0.12 + index * 0.035));
         face.setAttribute('stroke', blendColor(colorMix));
         face.setAttribute('stroke-width', '.8');
+      });
+      points.forEach((point, index) => {
+        const ray = rays[index];
+        const marker = markers[index];
+        const visible = !complete && point !== null;
+        ray.style.display = marker.style.display = visible ? '' : 'none';
+        ray.setAttribute('data-score', JSON.stringify(scores[index]));
+        marker.setAttribute('data-score', JSON.stringify(scores[index]));
+        if (!visible) return;
+        ray.setAttribute('x1', center.x);
+        ray.setAttribute('y1', center.y);
+        ray.setAttribute('x2', point.x);
+        ray.setAttribute('y2', point.y);
+        ray.setAttribute('stroke', blendColor(colorMix));
+        marker.setAttribute('cx', point.x);
+        marker.setAttribute('cy', point.y);
+        marker.setAttribute('fill', blendColor(colorMix));
       });
       return outer.map((p) => ({ x: p.x / width, y: p.y / height, depth: p.depth }));
     },
@@ -203,6 +242,14 @@ export function mountStatusRadar(container, report) {
   mounts.get(container)?.();
   const axes = pyramidAxes(report);
   const preview = pyramidPreview(report);
+  const demo = preview?.basis === 'presentation_demo';
+  const baseline = axes.map((axis) =>
+    Number.isFinite(axis.normalized) && axis.normalized >= 0 && axis.normalized <= 100
+      ? axis.normalized
+      : null,
+  );
+  const complete = axes.length === 4 && baseline.every((score) => score !== null);
+  const baselineStatus = demo ? '시연 점수 · 파랑' : '평가 점수 · 파랑';
   const abort = new AbortController();
   const { signal } = abort;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -214,7 +261,7 @@ export function mountStatusRadar(container, report) {
   scene.setAttribute('role', 'img');
   scene.setAttribute(
     'aria-label',
-    '시연용 도형이며 실제 평가와 무관합니다. 투명 삼각뿔의 네 꼭짓점은 이력서 완성도, 직무 적합도, 지원 자격 충족도, 실무 경쟁력의 100점 기준입니다. 마우스 이동으로 시점, 휠로 크기를 조절할 수 있습니다. 키보드 방향키도 사용할 수 있습니다.',
+    `${demo ? '시연용 도형이며 실제 평가와 무관합니다.' : report?.source === 'backend' ? '백엔드에서 산출한 실제 평가 점수입니다.' : '제공된 평가 점수를 표시하는 그래프입니다.'} 투명 삼각뿔의 네 꼭짓점은 이력서 완성도, 직무 적합도, 지원 자격 충족도, 실무 경쟁력의 100점 기준입니다. ${complete ? '파란 도형은 네 항목의 점수를 나타냅니다.' : '미산정 항목을 0점으로 표시하지 않으며, 확인된 점수만 선과 점으로 표시합니다.'} 마우스 이동으로 시점, 휠로 크기를 조절할 수 있습니다. 키보드 방향키도 사용할 수 있습니다.`,
   );
   const fallback = fallbackScene();
   const leaders = svg('svg', { 'aria-hidden': 'true', class: 'score-pyramid__leaders' });
@@ -228,25 +275,23 @@ export function mountStatusRadar(container, report) {
     return label;
   });
   const readings = element('dl', 'score-pyramid__readings');
-  axes.forEach((axis) => {
+  axes.forEach((axis, index) => {
     const row = element('div', 'score-pyramid__reading');
+    row.dataset.axisId = axis.id;
     const name = element('dt', '', axis.label);
-    const value = element(
-      'dd',
-      '',
-      axis.normalized === null ? '미산정' : `${Math.round(axis.normalized)}`,
-    );
-    value.dataset.unavailable = String(axis.normalized === null);
+    const value = element('dd', '', displayScore(baseline[index], '미산정'));
+    value.dataset.unavailable = String(baseline[index] === null);
+    value.dataset.score = JSON.stringify(baseline[index]);
     row.append(name, value);
     readings.append(row);
   });
-  const status = element('p', 'score-pyramid__status', '기본 도형 · 파랑');
+  const status = element('p', 'score-pyramid__status', baselineStatus);
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   root.append(scene, readings, status);
   container.replaceChildren(root);
   container.dataset.axisCount = String(axes.length);
-  container.dataset.radarScores = JSON.stringify(axes.map((axis) => axis.normalized));
+  container.dataset.radarScores = JSON.stringify(baseline);
 
   const surface = container.closest('[data-resume-score-card]') || container;
   const buttons = [...surface.querySelectorAll('[data-preview-improvement]')];
@@ -265,8 +310,6 @@ export function mountStatusRadar(container, report) {
     colorMix = 0,
     colorFrom = 0,
     colorTo = 0;
-  const complete = axes.length === 4 && axes.every((axis) => axis.normalized !== null);
-  const baseline = axes.map((axis) => axis.normalized);
   let from = complete ? baseline.map(() => 0) : [...baseline],
     to = [...baseline],
     current = [...from],
@@ -286,7 +329,9 @@ export function mountStatusRadar(container, report) {
   if (!complete)
     status.textContent =
       axes.length === 4
-        ? '미산정 항목이 있어 기준선만 표시합니다. 확인된 점수는 아래에서 볼 수 있습니다.'
+        ? baseline.some((score) => score !== null)
+          ? '확인된 점수만 선과 점으로 표시합니다. 미산정 항목은 도형으로 연결하지 않습니다.'
+          : '아직 산정된 점수가 없어 100점 기준 프레임만 표시합니다.'
         : '표시할 평가 항목이 없습니다.';
 
   function measureLabels() {
@@ -307,7 +352,7 @@ export function mountStatusRadar(container, report) {
       positions = renderer.render(current, colorMix, rotation, pitch, zoom);
     } else {
       positions = fallback
-        .draw(current, colorMix, rotation, pitch, zoom, complete, width, height)
+        .draw(current, colorMix, rotation, pitch, zoom, width, height)
         .map((p) => ({ ...p, x: p.x * width, y: p.y * height }));
     }
     const boxes = positionLabels(positions, labelSizes, width, height);
@@ -372,7 +417,7 @@ export function mountStatusRadar(container, report) {
     colorTo = projected ? 1 : 0;
     started = clock;
     duration = 1.8;
-    status.textContent = projected ? '변화 예시 · 하늘색' : '기본 도형 · 파랑';
+    status.textContent = projected ? '변화 예시 · 하늘색' : baselineStatus;
     for (const button of buttons) {
       button.setAttribute('aria-pressed', String(projected));
       button.textContent = projected ? '기본 도형으로 돌아가기' : '점수 변화 시연 보기';
@@ -497,6 +542,7 @@ export function mountStatusRadar(container, report) {
   canvas.addEventListener(
     'webglcontextrestored',
     () => {
+      if (!renderer) return;
       lost = false;
       root.dataset.renderer = 'webgl';
       resume();
@@ -504,6 +550,8 @@ export function mountStatusRadar(container, report) {
     { signal },
   );
   root.dataset.renderer = 'fallback';
+  // The WebGL solid requires four numeric vertices. Incomplete reports use the
+  // same perspective frame with only the available SVG rays and points above.
   if (complete)
     import('./matching-eye.js')
       .then(({ ScorePyramidRenderer }) => {

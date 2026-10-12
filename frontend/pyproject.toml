@@ -1,0 +1,4 @@
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+extend-exclude = "/(\\.runtime|node_modules|보관|모션-미리보기)/"

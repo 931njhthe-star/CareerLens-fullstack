@@ -1,28 +1,30 @@
-/* Approved sapphire eye / orbit bridge. Only presentation owns these states. */
+/* The analysis pupil is isolated from ordinary workflow pages. */
 .report-loading-overlay {
   color: #17335b;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .report-loading-overlay::backdrop {
-  background: rgb(15 31 52 / 68%);
-  backdrop-filter: blur(5px);
-  transition:
-    background 620ms ease,
-    backdrop-filter 620ms ease;
+  background: #fff;
+  backdrop-filter: none;
+  animation: report-page-clear 460ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background 620ms ease;
 }
 
 .report-loading-content {
-  max-height: calc(100dvh - 32px);
-  overflow-y: auto;
-  border: 1px solid rgb(205 223 246 / 80%);
-  border-radius: 24px;
-  background: #f4f8ff;
-  box-shadow: 0 28px 100px rgb(9 28 60 / 20%);
-  transition:
-    background 500ms ease,
-    border-color 500ms ease,
-    box-shadow 500ms ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 28px 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .report-loading-heading h2,
@@ -32,12 +34,91 @@
   color: #17335b;
 }
 
+.report-loading-heading {
+  position: relative;
+  max-width: 680px;
+  margin-inline: auto;
+}
+
+.report-loading-heading .report-loading-progress-note {
+  margin-top: 12px;
+  color: #62748f;
+  font-size: 12px;
+}
+
+.report-loading-heading [data-evaluation-status] {
+  min-height: 24px;
+  margin-top: 10px;
+  color: #42608a;
+}
+
+.report-loading-eye {
+  flex: none;
+  /* Stable square contains both flat faces throughout the Y-axis turn. */
+  width: min(520px, 100%, 51svh);
+  aspect-ratio: 1;
+  margin: 0;
+  pointer-events: none;
+}
+
+.live-analysis-motion,
+.live-analysis-scene {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  pointer-events: none;
+}
+
+.report-loading-percent {
+  margin: -2px 0 24px;
+  color: #285ca9;
+  font-size: 28px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.report-loading-fallback {
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  text-align: center;
+}
+
+.report-loading-return {
+  position: relative;
+  margin-top: 16px;
+}
+
 .report-loading-heading,
 .report-loading-return,
-.report-loading-eye {
-  transition:
-    opacity 460ms ease,
-    filter 540ms ease;
+.report-loading-eye,
+.report-loading-percent {
+  transition: opacity 460ms ease;
+}
+
+.report-loading-heading,
+.report-loading-return,
+.report-loading-percent {
+  animation: report-analysis-copy 280ms ease 460ms backwards;
+}
+
+@keyframes report-page-clear {
+  from {
+    background: rgb(255 255 255 / 0%);
+  }
+  to {
+    background: #fff;
+  }
+}
+
+@keyframes report-analysis-copy {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .report-loading-return:hover {
@@ -46,16 +127,6 @@
 .report-loading-return:focus-visible {
   outline-color: #3677e4;
 }
-.report-loading-eye .cl-analysis-eye__summary {
-  color: #17335b;
-}
-
-/* Pale blue belongs to light and fibres, not small text on white panels. */
-.report-loading-eye .cl-analysis-eye__state,
-.report-loading-eye .cl-analysis-eye__summary strong {
-  color: #2056bf;
-}
-
 .report-loading-overlay.is-transferring .report-loading-content {
   background: transparent;
   border-color: transparent;
@@ -64,17 +135,18 @@
 }
 
 .report-loading-overlay.is-transferring .report-loading-heading,
-.report-loading-overlay.is-transferring .report-loading-return {
+.report-loading-overlay.is-transferring .report-loading-return,
+.report-loading-overlay.is-transferring .report-loading-percent {
   opacity: 0;
   pointer-events: none;
 }
 
 .report-loading-overlay.is-transferring .report-loading-eye {
   opacity: 0;
-  filter: blur(3px);
 }
 
 .report-loading-overlay.is-revealing::backdrop {
+  animation: none;
   background: transparent;
   backdrop-filter: blur(0);
 }
@@ -137,8 +209,10 @@
 
 @media (max-width: 699px) {
   .report-loading-content {
-    max-height: calc(100dvh - 20px);
-    border-radius: 18px;
+    padding-inline: 16px;
+  }
+  .report-loading-heading {
+    padding-inline: 0;
   }
 }
 
@@ -147,7 +221,9 @@
   .report-loading-content,
   .report-loading-heading,
   .report-loading-return,
-  .report-loading-eye {
+  .report-loading-eye,
+  .report-loading-percent {
+    animation: none;
     transition: none;
   }
   [data-report-transition='revealing'] [data-report-reveal],

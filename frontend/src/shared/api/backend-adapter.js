@@ -1,4 +1,8 @@
 import { parseCareerCatalog } from '../../features/job-postings/career-catalog.js';
+import { extractReportJobContext } from '../../features/analysis/report-context.js';
+import { backendStatusLabel } from '../../features/analysis/report-presentation.js';
+import { recordFlowEvent } from '../../features/activity-flow/events.js';
+import { sanitizeFlowProgressEvents, sanitizeGuestFlowEvents } from '../../features/activity-flow/backend-progress.js';
 
 const ACCESS_KEY = 'careerlens.backend.access-token';
 const REFRESH_KEY = 'careerlens.backend.refresh-token';
@@ -8,6 +12,14 @@ const CUSTOM_POSTINGS_KEY = 'careerlens.backend.mock-postings';
 const BOOKMARKS_KEY = 'careerlens.backend.bookmarks';
 const DEMO_SESSION_KEY = 'careerlens.backend.demo-session';
 const DEMO_WORKSPACE_KEY = 'careerlens.backend.demo-workspace';
+const REPORT_PAGE_SIZE = 20;
+const LOCAL_CATALOG_TTL_MS = 5 * 60_000;
+const JOB_LIST_TTL_MS = 30_000;
+const LOCAL_GUEST_PREFIX = 'local-guest:';
+const localGuestCapabilities = new WeakMap();
+const localGuestStores = new WeakMap();
+const localCatalogs = new WeakMap();
+let backendJobLists = new WeakMap();
 
 let enabled = false;
 
@@ -72,14 +84,27 @@ function storageGet(key, fallback = null) {
 
 function storageSet(key, value) {
   sessionStorage.setItem(key, JSON.stringify(value));
+  recordFlowEvent('local_data', { source: key === DEMO_SESSION_KEY || key === DEMO_WORKSPACE_KEY || demoSession() ? 'demo' : 'observed' });
 }
 
 function storageRemove(key) {
+  const existed = sessionStorage.getItem(key) !== null;
+  const demo = key === DEMO_SESSION_KEY || key === DEMO_WORKSPACE_KEY || demoSession();
   sessionStorage.removeItem(key);
+  if (existed) recordFlowEvent('local_data', { state: 'cleared', source: demo ? 'demo' : 'observed' });
 }
 
-function getState() {
-  return storageGet(STATE_KEY, {});
+function clearMemberStorage() {
+  backendJobLists = new WeakMap();
+  const keys = [];
+  for (let index = 0; index < sessionStorage.length; index += 1) {
+    const key = sessionStorage.key(index);
+    if (key === STATE_KEY || key?.startsWith(`${STATE_KEY}:`)) keys.push(key);
+  }
+  keys.forEach(storageRemove);
+  storageRemove(ACCESS_KEY);
+  storageRemove(REFRESH_KEY);
+  storageRemove(BOOKMARKS_KEY);
 }
 
 function demoSession() {
@@ -116,7 +141,7 @@ function updateDemoWorkspace(next) {
 
 function guestState() {
   const state = storageGet(GUEST_KEY, {});
-  if (state.expires_at && Date.parse(state.expires_at) <= Date.now()) {
+  if (state.resume_text && (!Number.isFinite(Date.parse(state.expires_at)) || Date.parse(state.expires_at) <= Date.now())) {
     storageRemove(GUEST_KEY);
     return {};
   }
@@ -124,11 +149,166 @@ function guestState() {
 }
 
 function saveGuest(next) {
+  const current = guestState();
+  const changedInput = ['resume_text', 'career_target', 'selected_posting'].some((key) => Object.hasOwn(next, key));
   storageSet(GUEST_KEY, {
-    ...guestState(),
+    ...current,
+    ...(changedInput ? { preview_ready: false, analysis_pending: false, report_locked: false, completed: false, report: null, local_run: null } : {}),
     ...next,
-    expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    expires_at:
+      current.expires_at ||
+      (next.resume_text ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null),
   });
+}
+
+async function probeLocalGuest(request, signal) {
+  try {
+    const capabilities = await request('/local-guest/capabilities', { signal, auth: false });
+    const available = capabilities?.available === true && capabilities.storage_origin === 'frontend_guest';
+    localGuestCapabilities.set(request, available);
+    localGuestStores.set(request, capabilities?.storage_origin === 'frontend_guest');
+    return available;
+  } catch (failure) {
+    if (signal?.aborted || failure?.name === 'AbortError') throw failure;
+    // An unavailable analysis server cannot produce a completed guest report.
+    localGuestCapabilities.set(request, false);
+    localGuestStores.set(request, false);
+    return false;
+  }
+}
+
+function localRunId(id) {
+  return typeof id === 'string' && id.startsWith(LOCAL_GUEST_PREFIX) ? id.slice(LOCAL_GUEST_PREFIX.length) : null;
+}
+
+function localReport(result, ApiError) {
+  if (!result || !['completed', 'partial'].includes(result.status) ||
+      typeof result.run_id !== 'string' || !result.run_id ||
+      typeof result.report_text !== 'string' || !result.report_text.trim() ||
+      result.storage_origin !== 'frontend_guest')
+    error(ApiError, '저장한 보고서 형식이 올바르지 않습니다.', 502, 'report_result_invalid');
+  const scores = result.scores || {};
+  const backendResult = {
+    ...scores,
+    run_id: `${LOCAL_GUEST_PREFIX}${result.run_id}`,
+    criteria: result.criteria || result.report_data?.criteria || [],
+    validation_status: scores.validation_status || result.status,
+  };
+  const mapped = mapBackendReport(backendResult, result.report_text, {
+    id: `${LOCAL_GUEST_PREFIX}${result.run_id}`, status: result.status,
+  });
+  return { ...mapped, storage_origin: 'frontend_guest' };
+}
+
+function localReportWorkspace(result, ApiError) {
+  const report = localReport(result, ApiError);
+  const context = report.job_context;
+  return { draft: {
+    analysis_mode: 'saved_report', saved_report: true,
+    company: context.company || result.job_summary?.company_name || '',
+    role: context.title || result.job_summary?.title || '대상 공고 정보 없음',
+    selected_posting_id: result.job_id || '',
+    created_at: result.completed_at || result.created_at || '', report,
+  }, questions: [] };
+}
+
+async function readLocalReport(id, request, signal) {
+  const token = sessionStorage.getItem(ACCESS_KEY);
+  const value = await request(`/local-guest/reports/${encodeURIComponent(id)}`, { signal, accessToken: token });
+  signal?.throwIfAborted();
+  if (sessionStorage.getItem(ACCESS_KEY) !== token)
+    throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+  return value;
+}
+
+function storeGuestRun(update, expectedKey, ApiError) {
+  const current = guestState();
+  if (current.local_run?.idempotency_key !== expectedKey)
+    throw new DOMException('임시 분석이 변경되었습니다.', 'AbortError');
+  if (!update || typeof update.run_id !== 'string' || !update.run_id ||
+      !['queued', 'running', 'completed', 'partial', 'failed', 'cancelled'].includes(update.status) ||
+      update.storage_origin !== 'frontend_guest')
+    error(ApiError, '분석 상태를 확인하지 못했습니다.', 502, 'invalid_response');
+  // Guest storage contains identifiers and progress only. The actual document
+  // and scores remain server-side until a verified account claims the result.
+  const complete = ['completed', 'partial'].includes(update.status) && update.completed === true;
+  const serverExpiry = Date.parse(update.expires_at);
+  const localExpiry = Date.parse(current.expires_at);
+  saveGuest({
+    ...(Number.isFinite(serverExpiry) ? { expires_at: new Date(Number.isFinite(localExpiry) ? Math.min(serverExpiry, localExpiry) : serverExpiry).toISOString() } : {}),
+    local_run: { id: update.run_id, idempotency_key: expectedKey, status: update.status,
+      progress_percent: Number.isFinite(update.progress_percent) ? update.progress_percent : null,
+      current_stage: typeof update.current_stage === 'string' ? update.current_stage : '',
+      created_at: update.created_at || '', completed_at: update.completed_at || '' },
+    completed: complete, report_locked: complete, preview_ready: false, analysis_pending: false,
+  });
+}
+
+function guestProgress(state, onProgress, metadata) {
+  const run = state.local_run;
+  onProgress?.({ run: { id: `${LOCAL_GUEST_PREFIX}${run.id}`, status: run.status,
+    progress_percent: run.progress_percent, current_stage: run.current_stage }, events: [],
+    execution: 'guest', flowEvents: sanitizeGuestFlowEvents(metadata?.flow_events),
+    durationMs: typeof metadata?.analysis_duration_ms === 'number' && Number.isFinite(metadata.analysis_duration_ms)
+      && metadata.analysis_duration_ms >= 0 && metadata.analysis_duration_ms <= 86400000 ? metadata.analysis_duration_ms : null });
+}
+
+async function runGuestAnalysis(request, signal, onProgress) {
+  let guest = guestState();
+  if (!guest.local_run?.idempotency_key) {
+    saveGuest({ local_run: { idempotency_key: crypto.randomUUID(), status: 'queued' }, completed: false,
+      report_locked: false, preview_ready: false, analysis_pending: false });
+    guest = guestState();
+  }
+  const key = guest.local_run.idempotency_key;
+  const assertCurrent = () => {
+    signal?.throwIfAborted();
+    if (guestState().local_run?.idempotency_key !== key)
+      throw new DOMException('임시 분석이 변경되었습니다.', 'AbortError');
+  };
+  if (!guest.local_run.id) {
+    // Retain the creation response even if this view is cancelled. The server
+    // may already have accepted a paid job; its ID is needed to stop that job.
+    const started = await request('/local-guest/analyses', { method: 'POST', auth: false,
+      idempotencyKey: key,
+      body: { resume_text: guest.resume_text, job_id: guest.selected_posting.id, expires_at: guest.expires_at } });
+    try { assertCurrent(); }
+    catch (failure) {
+      if (started?.run_id) await request(`/local-guest/analyses/${encodeURIComponent(started.run_id)}/cancel`,
+        { method: 'POST', body: {}, auth: false, keepalive: true }).catch(() => {});
+      throw failure;
+    }
+    storeGuestRun(started, key, request.ApiError);
+  }
+  const deadline = Date.now() + 15 * 60_000;
+  while (Date.now() < deadline) {
+    assertCurrent();
+    guest = guestState();
+    let update;
+    try {
+      update = await request(`/local-guest/analyses/${encodeURIComponent(guest.local_run.id)}`, { signal, auth: false });
+    } catch (failure) {
+      assertCurrent();
+      if (![404, 410].includes(failure.status)) throw failure;
+      storageRemove(GUEST_KEY);
+      error(request.ApiError, '임시 분석이 만료되었습니다. 이력서를 다시 첨부해 주세요.', 409, 'guest_expired');
+    }
+    assertCurrent();
+    storeGuestRun(update, key, request.ApiError);
+    guest = guestState();
+    guestProgress(guest, onProgress, update);
+    if (guest.completed) return sessionMockWorkspace();
+    if (['failed', 'cancelled'].includes(guest.local_run.status))
+      error(request.ApiError, '분석을 완료하지 못했습니다. 다시 시도해 주세요.', 502,
+        guest.local_run.status === 'cancelled' ? 'evaluation_cancelled' : 'evaluation_failed');
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, 2000);
+      function abort() { clearTimeout(timer); reject(new DOMException('요청이 취소되었습니다.', 'AbortError')); }
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort();
+    });
+  }
+  error(request.ApiError, '분석 상태를 다시 확인해 주세요.', 504, 'evaluation_timeout');
 }
 
 function error(ApiError, message, status = 501, code = 'backend_feature_unavailable') {
@@ -144,7 +324,9 @@ function mockReport({ company, role }) {
     criteria: [],
     matches: [],
     strengths: ['가상 보고서 화면을 확인할 수 있습니다.'],
-    gaps: ['실제 평가 결과가 아닙니다. 실제 분석은 실제 계정과 백엔드 등록 이력서·공고가 필요합니다.'],
+    gaps: [
+      '실제 평가 결과가 아닙니다. 실제 분석은 실제 계정과 백엔드 등록 이력서·공고가 필요합니다.',
+    ],
     priorities: [],
     questions: [],
     reference_guidance: [],
@@ -234,10 +416,6 @@ async function demoApi(path, options, ApiError, catalog) {
   if (cleanPath === '/job-postings' && method === 'GET') {
     const available = [...catalog.postings, ...mockPostings, ...customPostings()];
     const params = new URLSearchParams(path.split('?')[1] || '');
-    if (params.get('role_id') && params.get('role_id') !== 'custom') {
-      const selectedRole = catalog.roles.find((role) => role.id === params.get('role_id'));
-      if (selectedRole) params.set('role', selectedRole.label);
-    }
     if (params.get('role_id')) {
       const label =
         params.get('role_id') === 'custom'
@@ -254,6 +432,7 @@ async function demoApi(path, options, ApiError, catalog) {
         });
       }
     }
+    const roleScope = applyPostingRoleScope(params, catalog.roles);
     const items = filteredPostings(available, params);
     const page = Math.max(1, Number(params.get('page')) || 1);
     const pageSize = Math.max(1, Number(params.get('page_size')) || 12);
@@ -263,9 +442,14 @@ async function demoApi(path, options, ApiError, catalog) {
     return {
       items: selected,
       total: postings.length,
+      available_total: available.length,
+      ...roleScope,
       page,
       page_size: pageSize,
       filters: {
+        roles: [
+          ...new Set(available.map((item) => item.role_category || item.role).filter(Boolean)),
+        ].sort((a, b) => a.localeCompare(b, 'ko')),
         locations: [...new Set(available.map((item) => item.location))],
         employment_types: [...new Set(available.map((item) => item.employment_type))],
         experience_levels: [...new Set(available.map((item) => item.experience_level))],
@@ -345,11 +529,16 @@ async function demoApi(path, options, ApiError, catalog) {
     return { ...updateDemoWorkspace({ preparation }), preparation };
   }
   if (cleanPath === '/resume-examples') {
-    return { items: Array.from({ length: 12 }, (_, index) => ({
-      ...resumeExample,
-      id: `mock-resume-${index + 1}`,
-      title: index ? `${resumeExample.title} ${index + 1}` : resumeExample.title,
-    })), total: 12, page: 1, page_size: 12 };
+    return {
+      items: Array.from({ length: 12 }, (_, index) => ({
+        ...resumeExample,
+        id: `mock-resume-${index + 1}`,
+        title: index ? `${resumeExample.title} ${index + 1}` : resumeExample.title,
+      })),
+      total: 12,
+      page: 1,
+      page_size: 12,
+    };
   }
   const resumeExamplePath = /^\/resume-examples\/([^/]+)$/.exec(cleanPath);
   if (resumeExamplePath && method === 'GET')
@@ -363,13 +552,31 @@ async function demoApi(path, options, ApiError, catalog) {
   error(ApiError, '이 기능은 시연 계정에서 지원하지 않습니다.', 501);
 }
 
-function mapJob(posting, companyName = '') {
+function matchingCatalogPosting(posting, catalogPostings) {
+  if (posting.source_name !== 'local_markdown') return undefined;
+  return catalogPostings.find(
+    (item) =>
+      item.source_name === posting.source_name &&
+      item.source_external_id === posting.source_external_id,
+  );
+}
+
+function mapJob(posting, companyName = '', catalogPostings = []) {
+  const local = matchingCatalogPosting(posting, catalogPostings);
   const sourceMarkdown =
     posting.source_name === 'local_markdown' && typeof posting.description === 'string'
       ? posting.description
       : '';
+  // Read metadata from the backend's current document, never an older local copy.
+  const sourceField = (name) =>
+    new RegExp(`^\\s*-\\s+\\*\\*${name}:\\*\\*\\s*(.*?)\\s*$`, 'm')
+      .exec(sourceMarkdown)?.[1]
+      ?.trim() || '';
+  const role = posting.role || sourceField('직무명') || posting.title;
   const requirements = Array.isArray(posting.requirements)
-    ? posting.requirements.map((item) => (typeof item === 'string' ? item : item.name || item.text || ''))
+    ? posting.requirements.map((item) =>
+        typeof item === 'string' ? item : item.name || item.text || '',
+      )
     : [];
   const preferred = Array.isArray(posting.preferred_requirements)
     ? posting.preferred_requirements.map((item) =>
@@ -379,20 +586,37 @@ function mapJob(posting, companyName = '') {
   const skills = [...new Set([...requirements, ...preferred].filter(Boolean))].slice(0, 12);
   const minimum = posting.career_min_months;
   const maximum = posting.career_max_months;
+  const monthsLabel = (months) => {
+    const years = Math.floor(months / 12);
+    const rest = months % 12;
+    return (
+      [years ? `${years}년` : '', rest ? `${rest}개월` : ''].filter(Boolean).join(' ') || '0개월'
+    );
+  };
   return {
     id: posting.id,
-    company: companyName || posting.company_name || posting.company || '기업 정보 없음',
-    role: posting.title,
-    location: posting.location || '근무지 협의',
-    employment_type: posting.employment_type || '정보 없음',
+    company:
+      companyName ||
+      posting.company_name ||
+      posting.company ||
+      sourceField('회사명') ||
+      '기업 정보 없음',
+    role,
+    // The local taxonomy is supplementary, and applies only while the role still matches.
+    role_category: posting.role_category || (local?.role === role ? local.role_category : '') || '',
+    title: posting.title || sourceField('공고명') || '공고명 정보 없음',
+    location: posting.location || sourceField('근무지') || '근무지 정보 없음',
+    employment_type: posting.employment_type || sourceField('고용형태') || '정보 없음',
     experience_level:
       minimum == null && maximum == null
-        ? '경력 요건 미정'
+        ? sourceField('경력') || '경력 요건 미정'
         : maximum == null
-          ? `경력 ${Math.floor((minimum || 0) / 12)}년 이상`
-          : `경력 ${Math.floor((minimum || 0) / 12)}~${Math.floor(maximum / 12)}년`,
+          ? `경력 ${monthsLabel(minimum)} 이상`
+          : minimum == null
+            ? `경력 ${monthsLabel(maximum)} 이하`
+            : `경력 ${monthsLabel(minimum)}~${monthsLabel(maximum)}`,
     skills,
-    description: sourceMarkdown || [
+    description: [
       posting.description,
       ...(Array.isArray(posting.responsibilities) ? posting.responsibilities : []),
       ...requirements,
@@ -406,6 +630,7 @@ function mapJob(posting, companyName = '') {
     source_name: posting.source_name || '',
     source_external_id: posting.source_external_id || '',
     source_type: 'backend',
+    is_example: Boolean(local),
     source_url: posting.source_url || '',
     is_saved: false,
   };
@@ -413,22 +638,60 @@ function mapJob(posting, companyName = '') {
 
 function mockPosting(id, catalogPostings = []) {
   const custom = storageGet(CUSTOM_POSTINGS_KEY, []);
-  return [...catalogPostings, ...mockPostings, ...custom].find((posting) => posting.id === id) || null;
+  return (
+    [...catalogPostings, ...mockPostings, ...custom].find((posting) => posting.id === id) || null
+  );
+}
+
+// Scope changes only browsing. The selected backend posting ID remains unchanged.
+function applyPostingRoleScope(params, roles) {
+  const selectedRole = roles.find(
+    (role) => role.id === params.get('role_id') && role.id !== 'custom',
+  );
+  if (selectedRole) params.set('role', selectedRole.label);
+  if (!params.has('role_scope')) return {};
+
+  const requested = params.get('role_scope');
+  const scope = ['category', 'exact', 'all'].includes(requested) ? requested : 'category';
+  const category = selectedRole?.role_category || '';
+  const categoryUnavailable = scope === 'category' && selectedRole && !category;
+  // Older local servers may not expose the optional source taxonomy yet.
+  // Keep all postings visible instead of silently reverting to one exact title.
+  if (scope === 'all' || categoryUnavailable) {
+    params.delete('role');
+  } else if (scope === 'category' && category) {
+    params.delete('role');
+    params.set('role_category', category);
+  } else if (selectedRole) {
+    params.delete('role');
+    params.set('role_exact', selectedRole.label);
+  }
+  // Free-text roles keep keyword matching when no source classification is available.
+  return {
+    role_scope: categoryUnavailable ? 'all' : scope === 'category' && !category ? 'exact' : scope,
+    role_category: category,
+  };
 }
 
 function filteredPostings(items, params) {
   const q = (params.get('q') || '').toLocaleLowerCase();
   const role = (params.get('role') || '').toLocaleLowerCase();
+  const roleCategory = params.get('role_category') || '';
+  const exactRole = params.get('role_exact') || '';
   const filters = ['location', 'employment_type', 'experience_level', 'skill'];
   let result = items.filter((posting) => {
-    const text = `${posting.company} ${posting.role} ${posting.description} ${posting.skills.join(' ')}`
-      .toLocaleLowerCase();
+    const text =
+      `${posting.company} ${posting.role} ${posting.description} ${posting.skills.join(' ')}`.toLocaleLowerCase();
     return (
       (!q || text.includes(q)) &&
+      (!roleCategory || posting.role_category === roleCategory || posting.role === roleCategory) &&
+      (!exactRole || posting.role === exactRole) &&
       (!role || `${posting.role} ${posting.description}`.toLocaleLowerCase().includes(role)) &&
       filters.every((key) => {
         const value = params.get(key);
-        return !value || (key === 'skill' ? posting.skills.includes(value) : posting[key] === value);
+        return (
+          !value || (key === 'skill' ? posting.skills.includes(value) : posting[key] === value)
+        );
       })
     );
   });
@@ -438,7 +701,7 @@ function filteredPostings(items, params) {
   return result;
 }
 
-function mapBackendReport(result, reportText = '') {
+function mapBackendReport(result, reportText = '', run = {}) {
   const categories = [
     ['resume_completeness', '이력서 완성도'],
     ['job_fit', '직무 적합도'],
@@ -448,13 +711,22 @@ function mapBackendReport(result, reportText = '') {
   const criteria = (result.criteria || []).map((item) => {
     const detail = item.evaluation_criteria || {};
     return {
+      ...item,
       code: detail.criterion_code || '',
       label: detail.name_ko || detail.criterion_code || '평가 기준',
+      domain_code: detail.domain_code || '',
+      weight: detail.weight ?? null,
       score: item.score,
       max_score: 100,
       detail: item.reasoning_summary || '',
       status:
-        item.verdict === 'met' ? 'confirmed' : item.verdict === 'unknown' ? 'partial' : 'missing',
+        item.verdict === 'met'
+          ? 'confirmed'
+          : item.verdict === 'not_applicable'
+            ? 'excluded'
+            : item.verdict === 'not_met'
+              ? 'missing'
+              : 'partial',
     };
   });
   const matches = criteria.map((criterion, index) => {
@@ -463,26 +735,32 @@ function mapBackendReport(result, reportText = '') {
     return {
       requirement: criterion.label,
       status: criterion.status,
-      evidence_items: evidence.map((item) => ({
-        excerpt: item.quote || item.text || item.excerpt || '',
-        source_label: item.source || item.source_label || '이력서 근거',
-      })),
+      verdict: criterion.verdict,
+      confidence: criterion.confidence,
+      validation_status: criterion.validation_status,
+      comparison_basis: criterion.comparison_basis,
+      estimated: criterion.estimated,
+      issues: criterion.issues,
+      evidence_items: evidence
+        .filter((item) => item && typeof item === 'object')
+        .map((item) => ({
+          ...item,
+          excerpt: item.quote || item.text || item.excerpt || '',
+          source_label:
+            item.source === 'resume'
+              ? '이력서'
+              : item.source === 'job'
+                ? '채용공고'
+                : item.source_label || '출처 정보 없음',
+        })),
     };
   });
-  const values = categories.map(([key]) => result[key]);
-  const known = values.filter((value) => Number.isFinite(value));
-  const score =
-    result.overall_score === null
-      ? null
-      : Number.isFinite(result.overall_score)
-        ? result.overall_score
-        : known.length
-          ? known.reduce((total, value) => total + value, 0) / known.length
-          : null;
+  // An omitted overall score is withheld, not permission to invent a frontend average.
+  const score = Number.isFinite(result.overall_score) ? result.overall_score : null;
   const scoreComponents = Object.fromEntries(
     categories.map(([key, label]) => [key, { label, score: result[key] ?? null }]),
   );
-  const unresolved = criteria.filter((item) => item.status !== 'confirmed');
+  const unresolved = criteria.filter((item) => ['missing', 'partial'].includes(item.status));
   return {
     source: 'backend',
     score,
@@ -490,31 +768,203 @@ function mapBackendReport(result, reportText = '') {
     verdict: result.eligibility_status || result.validation_status || '평가 완료',
     summary:
       score === null
-        ? `백엔드 평가가 완료되었습니다. 종합점수는 검증 상태(${result.validation_status || '미확정'})로 인해 산정되지 않았습니다.`
-        : `백엔드 평가 결과 종합점수는 ${score.toFixed(1)}점입니다. 점수와 판정은 저장된 이력서 및 채용공고를 기준으로 산출되었습니다.`,
+        ? `백엔드 평가가 완료되었습니다. 종합점수는 제공되지 않았습니다. 검증 상태: ${backendStatusLabel(result.validation_status || '미확정')}.`
+        : `백엔드 평가 결과 종합점수는 ${Math.round(score)}점입니다. 점수와 판정은 저장된 이력서 및 채용공고를 기준으로 산출되었습니다.`,
     criteria: criteria.filter((item) => Number.isFinite(item.score)),
     matches,
     strengths: criteria
-      .filter((item) => item.status === 'confirmed')
-      .map((item) => `${item.label}: 근거가 확인되었습니다.`),
-    gaps: unresolved.map((item) => `${item.label}: ${item.detail || '추가 근거를 확인해 주세요.'}`),
-    priorities: unresolved.slice(0, 5).map((item) => ({
-      title: item.label,
-      detail: item.detail || '이력서에 관련 경험과 구체적인 결과를 추가해 보세요.',
-    })),
-    questions: unresolved.slice(0, 5).map((item) => `${item.label}과 관련한 본인의 경험과 결과는 무엇인가요?`),
+      .filter((item) => item.status === 'confirmed' && item.detail.trim())
+      .map((item) => `${item.label}: ${item.detail}`),
+    gaps: unresolved
+      .filter((item) => item.detail.trim())
+      .map((item) => `${item.label}: ${item.detail}`),
+    priorities: criteria
+      .filter(
+        (item) =>
+          item.status !== 'excluded' &&
+          typeof item.improvement_suggestion === 'string' &&
+          item.improvement_suggestion.trim(),
+      )
+      .map((item) => ({
+        title: item.label,
+        detail: item.improvement_suggestion,
+      })),
+    questions: [],
     reference_guidance: [],
     backend_report_text: reportText,
-    status: result.validation_status,
+    job_context: extractReportJobContext(reportText),
+    status: run.status || result.validation_status,
+    run_id: run.id || result.run_id || '',
+    validation_status: result.validation_status || '',
+    eligibility_status: result.eligibility_status || '',
+    backend_criteria: Array.isArray(result.criteria) ? result.criteria : [],
+    backend_result: result,
   };
 }
 
-function makeSession(user = null) {
+function requireReportSession(ApiError) {
+  if (!sessionStorage.getItem(ACCESS_KEY))
+    error(ApiError, '저장한 보고서를 보려면 로그인해 주세요.', 401, 'login_required');
+}
+
+async function savedReportList(path, request, signal, ApiError) {
+  const rawOffset = new URLSearchParams(path.split('?')[1] || '').get('offset') ?? '0';
+  const offset = Number(rawOffset);
+  if (!/^\d+$/.test(rawOffset) || !Number.isSafeInteger(offset) || offset < 0)
+    error(ApiError, '보고서 목록 위치가 올바르지 않습니다.', 400, 'report_offset_invalid');
+  if (demoSession()) return { items: [], next_offset: null, demo: true };
+  requireReportSession(ApiError);
+  const runs = await request(`/evaluations?limit=${REPORT_PAGE_SIZE}&offset=${offset}`, { signal });
+  if (
+    !Array.isArray(runs) ||
+    runs.some(
+      (run) =>
+        !run ||
+        typeof run.id !== 'string' ||
+        !run.id ||
+        typeof run.status !== 'string' ||
+        typeof run.created_at !== 'string',
+    )
+  )
+    error(ApiError, '저장한 보고서 목록 형식이 올바르지 않습니다.', 502, 'report_list_invalid');
+  const nextOffset = runs.length === REPORT_PAGE_SIZE ? offset + REPORT_PAGE_SIZE : null;
+  if (nextOffset !== null && !Number.isSafeInteger(nextOffset))
+    error(ApiError, '보고서의 다음 목록 위치가 올바르지 않습니다.', 502, 'report_offset_invalid');
+  let localItems = [];
+  if (offset === 0 && localGuestStores.get(request) === true) {
+    const token = sessionStorage.getItem(ACCESS_KEY);
+    const response = await request('/local-guest/reports', { signal, accessToken: token });
+    signal?.throwIfAborted();
+    if (sessionStorage.getItem(ACCESS_KEY) !== token)
+      throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+    if (!Array.isArray(response.reports))
+      error(ApiError, '저장한 보고서 목록 형식이 올바르지 않습니다.', 502, 'report_list_invalid');
+    localItems = response.reports.filter((item) => ['completed', 'partial'].includes(item.status))
+      .map((item) => ({ id: `${LOCAL_GUEST_PREFIX}${item.run_id}`, status: item.status,
+        created_at: item.created_at, storage_origin: 'frontend_guest',
+        job_context: { title: item.title || '', company: item.company_name || '' } }));
+  }
+  const items = runs
+      .filter((run) => ['completed', 'partial'].includes(run.status))
+      .map(({ id, status, created_at }) => ({ id, status, created_at }));
+  return {
+    items: localItems.length ? [...items, ...localItems].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)) : items,
+    next_offset: nextOffset,
+  };
+}
+
+function savedReportId(encodedId, ApiError) {
+  if (demoSession())
+    error(ApiError, '시연 계정에는 저장된 실제 보고서가 없습니다.', 404, 'saved_report_missing');
+  requireReportSession(ApiError);
+  let id;
+  try {
+    id = decodeURIComponent(encodedId);
+  } catch {
+    error(ApiError, '보고서 주소가 올바르지 않습니다.', 400, 'report_id_invalid');
+  }
+  return id;
+}
+
+async function storedReportBody(id, request, signal, ApiError) {
+  const result = await request(`/evaluations/${encodeURIComponent(id)}/result`, { signal });
+  if (!result || !Array.isArray(result.reports) || !Array.isArray(result.criteria))
+    error(ApiError, '저장한 평가 결과 형식이 올바르지 않습니다.', 502, 'report_result_invalid');
+  const latestReport = result.reports
+    .filter(
+      (report) => report?.status === 'completed' && typeof report.id === 'string' && report.id,
+    )
+    .sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))[0];
+  if (!latestReport)
+    error(ApiError, '이 평가에 저장된 완료 보고서가 없습니다.', 404, 'saved_report_missing');
+  const report = await request(`/reports/${encodeURIComponent(latestReport.id)}`, { signal });
+  if (report?.status !== 'completed')
+    error(ApiError, '보고서 작성이 아직 완료되지 않았습니다.', 409, 'saved_report_incomplete');
+  if (typeof report.report_text !== 'string' || !report.report_text.trim())
+    error(ApiError, '저장한 보고서의 본문이 비어 있습니다.', 502, 'saved_report_empty');
+  return { result, report };
+}
+
+async function savedReportContext(encodedId, request, signal, ApiError) {
+  const id = savedReportId(encodedId, ApiError);
+  if (localRunId(id)) {
+    const workspace = localReportWorkspace(await readLocalReport(localRunId(id), request, signal), ApiError);
+    return { job_context: { company: workspace.draft.company, title: workspace.draft.role } };
+  }
+  const { report } = await storedReportBody(id, request, signal, ApiError);
+  return { job_context: extractReportJobContext(report.report_text) };
+}
+
+function backendReportDate(run = {}, result = {}, report = {}) {
+  return (
+    report.completed_at ||
+    run.completed_at ||
+    report.created_at ||
+    result.created_at ||
+    run.created_at ||
+    run.started_at ||
+    ''
+  );
+}
+
+async function savedReportWorkspace(encodedId, request, signal, ApiError) {
+  const id = savedReportId(encodedId, ApiError);
+  if (localRunId(id)) return localReportWorkspace(await readLocalReport(localRunId(id), request, signal), ApiError);
+  const run = await request(`/evaluations/${encodeURIComponent(id)}`, { signal });
+  if (!run || typeof run.id !== 'string' || !run.id)
+    error(ApiError, '평가 정보 형식이 올바르지 않습니다.', 502, 'report_run_invalid');
+  if (!['completed', 'partial'].includes(run.status))
+    error(ApiError, '아직 완료되지 않았거나 취소된 평가입니다.', 409, 'saved_report_incomplete');
+  const { result, report } = await storedReportBody(id, request, signal, ApiError);
+  const context = extractReportJobContext(report.report_text);
+  return {
+    draft: {
+      analysis_mode: 'saved_report',
+      saved_report: true,
+      role: context.title || '대상 공고 정보 없음',
+      company: context.company,
+      created_at: backendReportDate(run, result, report),
+      report: mapBackendReport(result, report.report_text, run),
+    },
+    questions: [],
+  };
+}
+
+function makeSession(user = null, realGuest = false) {
   return {
     user,
     csrf_token: '',
     providers: [],
     mail_mode: 'unavailable',
+    backend_adapter: true,
+    capabilities: {
+      guest_analysis: realGuest,
+      guest_report_preview: false,
+      document_conversion: !user?.demo,
+      password_reset: false,
+      preparation_analysis: false,
+    },
+  };
+}
+
+async function backendUser(request, signal) {
+  const profile = await request('/me', { signal });
+  return profileUser(profile, request.ApiError);
+}
+
+function profileUser(profile, ApiError) {
+  const id = profile.user_id || profile.id;
+  if (!id) error(ApiError, '로그인한 계정을 확인하지 못했습니다.', 502, 'profile_invalid');
+  const label = [profile.display_name, profile.name, profile.email].find(
+    (value) => typeof value === 'string' && value.trim(),
+  );
+  return {
+    ...profile,
+    id,
+    name: label?.trim() || '회원',
+    // This value comes from the authenticated /me response, never an email list,
+    // query parameter, user-editable metadata, or a client preference.
+    is_admin: profile.is_admin === true || profile.role === 'admin',
   };
 }
 
@@ -522,71 +972,153 @@ function decodePath(path) {
   return path.split('?')[0];
 }
 
-async function backendJobs(request, catalogPostings = []) {
-  const records = await request('/jobs?limit=100');
+async function careerCatalog(request, signal) {
+  signal?.throwIfAborted();
+  const cached = localCatalogs.get(request);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const response = await request('/local-data/career-markdown', { signal, auth: false });
+  signal?.throwIfAborted();
+  const value = parseCareerCatalog(response.items);
+  localCatalogs.set(request, { value, expiresAt: Date.now() + LOCAL_CATALOG_TTL_MS });
+  return value;
+}
+
+async function backendJobRecords(request, signal, includeDetails = false) {
+  const records = [];
+  const seen = new Set();
+  for (let offset = 0; ; offset += 100) {
+    const page = await request(
+      `/jobs?limit=100${offset ? `&offset=${offset}` : ''}${includeDetails ? '&include_details=true' : ''}`,
+      { signal },
+    );
+    if (!Array.isArray(page))
+      error(request.ApiError, '채용공고 목록 형식이 올바르지 않습니다.', 502, 'jobs_invalid');
+    const unseen = page.filter((posting) => !seen.has(posting.id));
+    for (const posting of unseen) seen.add(posting.id);
+    records.push(...unseen);
+    if (page.length < 100) return records;
+    if (!unseen.length)
+      error(
+        request.ApiError,
+        '채용공고의 다음 목록을 불러오지 못했습니다.',
+        502,
+        'jobs_pagination_failed',
+      );
+  }
+}
+
+async function backendJobs(request, catalogPostings = [], signal) {
+  signal?.throwIfAborted();
+  const token = sessionStorage.getItem(ACCESS_KEY);
+  const cached = backendJobLists.get(request);
+  if (cached && cached.token === token && cached.catalogPostings === catalogPostings && cached.expiresAt > Date.now())
+    return cached.value;
+  // One authenticated page includes the current filter fields and company name.
+  // Older servers ignore the optional flag; only those responses need hydration.
+  const records = await backendJobRecords(request, signal, true);
   const companies = new Map();
-  const catalogCompanies = new Map(
-    catalogPostings.map((posting) => [posting.source_external_id, posting.company]),
-  );
-  const ids = [
-    ...new Set(
-      records
-        .filter((posting) => !catalogCompanies.has(posting.source_external_id))
-        .map((posting) => posting.company_id)
-        .filter(Boolean),
-    ),
-  ];
-  await Promise.all(
-    ids.map(async (id) => {
-      try {
-        const company = await request(`/companies/${encodeURIComponent(id)}`);
-        companies.set(id, company.name || '');
-      } catch (failure) {
-        if (failure.status !== 404) throw failure;
-        companies.set(id, '');
+  const mapped = new Array(records.length);
+  let index = 0;
+  async function companyName(id) {
+    if (!id) return '';
+    if (!companies.has(id)) {
+      companies.set(
+        id,
+        request(`/companies/${encodeURIComponent(id)}`, { signal })
+          .then((company) => company.name || '')
+          .catch((failure) => {
+            if (failure.status !== 404) throw failure;
+            return '';
+          }),
+      );
+    }
+    return companies.get(id);
+  }
+  async function worker() {
+    while (index < records.length) {
+      signal?.throwIfAborted();
+      const position = index++;
+      const record = records[position];
+      let raw = record;
+      if (record.description === undefined) {
+        try {
+          raw = await request(`/jobs/${encodeURIComponent(record.id)}`, { signal });
+        } catch (failure) {
+          if (failure.status === 404) continue;
+          throw failure;
+        }
       }
-    }),
-  );
-  return records.map((posting) =>
-    mapJob(
-      posting,
-      catalogCompanies.get(posting.source_external_id) ||
-        companies.get(posting.company_id) ||
-        '',
-    ),
-  );
+      if (!raw || raw.id !== record.id)
+        error(request.ApiError, '채용공고 상세 형식이 올바르지 않습니다.', 502, 'job_invalid');
+      const company = Object.hasOwn(raw, 'companies')
+        ? (typeof raw.companies?.name === 'string' ? raw.companies.name : '')
+        : await companyName(raw.company_id);
+      mapped[position] = mapJob(raw, company, catalogPostings);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, records.length) }, worker));
+  signal?.throwIfAborted();
+  const value = mapped.filter(Boolean);
+  // Completed lists only: a failed/cancelled fetch cannot poison later browsing.
+  // Detail and evaluation selection still read the current server record.
+  backendJobLists.set(request, { token, catalogPostings, value, expiresAt: Date.now() + JOB_LIST_TTL_MS });
+  return value;
 }
 
 async function getMemberWorkspace(request, signal) {
-  const user = await request('/me', { signal });
+  const transport = request;
+  const originalToken = sessionStorage.getItem(ACCESS_KEY);
+  const assertCurrentOwner = () => {
+    signal?.throwIfAborted();
+    if (sessionStorage.getItem(ACCESS_KEY) !== originalToken)
+      throw new DOMException('계정이 변경되어 작업 공간 조회를 취소했습니다.', 'AbortError');
+  };
+  // A workspace can span several requests without an AbortSignal. Keep every
+  // response and state write bound to the account that started this load.
+  request = async (...args) => {
+    assertCurrentOwner();
+    const result = await transport(...args);
+    assertCurrentOwner();
+    return result;
+  };
+  request.ApiError = transport.ApiError;
+  const user = await backendUser(request, signal);
   const key = `${STATE_KEY}:${user.id}`;
+  const saveState = (value) => {
+    assertCurrentOwner();
+    storageSet(key, value);
+  };
   let state = storageGet(key, {});
+  let restoredLocalReport = null;
   const resumes = await request('/resumes?limit=100', { signal });
   let resume = resumes.find((item) => item.id === state.resume_id) || resumes[0] || null;
   if (resume) {
     state = { ...state, resume_id: resume.id };
-    storageSet(key, state);
+    saveState(state);
     resume = await request(`/resumes/${encodeURIComponent(resume.id)}`, { signal });
   }
   const draft = {
-    resume_text: resume?.original_text || '',
+    resume_text: resume?.original_text || state.claimed_resume_text || '',
     resume_id: resume?.id || '',
     filename: resume?.title || '',
     career_target: state.career_target || null,
     analysis_mode: 'job_posting',
   };
   let selected = state.selected_posting;
-  if (state.selected_posting_id && !selected) {
+  if (state.selected_posting_id && (!selected || selected.source_type === 'backend')) {
     try {
-      const raw = await request(`/jobs/${encodeURIComponent(state.selected_posting_id)}`, { signal });
-      const company = raw.company_id
-        ? await request(`/companies/${encodeURIComponent(raw.company_id)}`, { signal })
-        : null;
-      selected = mapJob(raw, company?.name || '');
+      selected = await backendPosting(
+        state.selected_posting_id,
+        request,
+        signal,
+        selected ? [selected] : [],
+      );
     } catch (failure) {
       if (failure.status !== 404) throw failure;
       selected = null;
     }
+    state = { ...state, selected_posting: selected, selected_posting_id: selected?.id || '' };
+    saveState(state);
   }
   if (selected) {
     draft.company = selected.company;
@@ -594,7 +1126,20 @@ async function getMemberWorkspace(request, signal) {
     draft.job_text = selected.description;
     draft.selected_posting_id = selected.id;
   }
-  if (!state.report && !state.suppress_latest_report) {
+  if (state.pending_guest_analysis === true) {
+    draft.pending_guest_analysis = Boolean(resume?.id && selected?.source_type === 'backend');
+    if (draft.pending_guest_analysis) {
+      draft.selected_posting = Object.fromEntries(
+        ['id', 'company', 'role', 'description', 'source_type', 'source_name', 'source_external_id']
+          .map((field) => [field, selected[field] || '']),
+      );
+    } else {
+      state = { ...state, pending_guest_analysis: false };
+      saveState(state);
+    }
+  }
+  const restoreLatest = !state.report && !state.suppress_latest_report && !state.pending_guest_analysis;
+  if (restoreLatest) {
     try {
       const runs = await request('/evaluations?limit=1', { signal });
       if (runs[0] && ['completed', 'partial'].includes(runs[0].status)) {
@@ -605,64 +1150,85 @@ async function getMemberWorkspace(request, signal) {
         const report = reportId
           ? await request(`/reports/${encodeURIComponent(reportId)}`, { signal })
           : null;
-        state.report = mapBackendReport(result, report?.report_text || '');
-        storageSet(key, state);
+        state.report = mapBackendReport(result, report?.report_text || '', runs[0]);
+        state.report_created_at = backendReportDate(runs[0], result, report || {});
+        saveState(state);
       }
     } catch (failure) {
-      if (![404, 409].includes(failure.status)) throw failure;
+      // Restoring a prior report is optional. Old server-side records may no
+      // longer satisfy the new response schema; keep login and new work usable.
+      // Authentication and cancellation failures must still propagate.
+      if (![404, 409, 500, 502, 503, 504].includes(failure.status)) throw failure;
     }
   }
-  if (state.report) {
+  if (restoreLatest && localGuestStores.get(transport) === true) {
+    const token = sessionStorage.getItem(ACCESS_KEY);
+    const response = await request('/local-guest/reports', { signal, accessToken: token });
+    signal?.throwIfAborted();
+    if (sessionStorage.getItem(ACCESS_KEY) !== token) throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+    const latest = Array.isArray(response.reports)
+      ? response.reports.filter((item) => ['completed', 'partial'].includes(item.status))
+        .sort((a, b) => Date.parse(b.completed_at || b.created_at) - Date.parse(a.completed_at || a.created_at))[0]
+      : null;
+    if (latest && (!state.report || Date.parse(latest.completed_at || latest.created_at) > Date.parse(state.report_created_at || 0))) {
+      const local = await readLocalReport(latest.run_id, request, signal);
+      restoredLocalReport = local;
+      state.report = localReport(local, request.ApiError);
+      state.report_created_at = local.completed_at || local.created_at || '';
+      state.claimed_resume_text = local.resume_text || '';
+      saveState(state);
+    }
+  }
+  if (localRunId(state.report?.run_id)) {
+    try {
+      const local = restoredLocalReport || await readLocalReport(localRunId(state.report.run_id), request, signal);
+      state.report = localReport(local, request.ApiError);
+      state.report_created_at = local.completed_at || local.created_at || '';
+      // A claimed guest report belongs to its original input, even when this
+      // account already has an unrelated resume stored in the team backend.
+      state.claimed_resume_text = typeof local.resume_text === 'string' ? local.resume_text : '';
+      state.resume_id = '';
+      draft.resume_text = state.claimed_resume_text;
+      draft.resume_id = '';
+      draft.filename = '';
+      saveState(state);
+    } catch (failure) {
+      if (failure.status !== 404 && failure.status !== 410) throw failure;
+      state = { ...state, report: null, suppress_latest_report: true };
+      saveState(state);
+    }
+  }
+  if (state.report && !state.pending_guest_analysis) {
+    if (state.report.source === 'backend' && state.report.backend_result) {
+      // Refresh derived labels for existing tabs without changing the stored server result.
+      const origin = state.report.storage_origin;
+      state.report = mapBackendReport(
+        state.report.backend_result,
+        state.report.backend_report_text || '',
+        {
+          id: state.report.run_id,
+          status: state.report.status,
+        },
+      );
+      if (origin) state.report.storage_origin = origin;
+    }
     draft.report = state.report;
     draft.created_at = state.report_created_at || '';
   }
-  if (state.preparation) draft.preparation = state.preparation;
+  if (state.preparation) draft.preparation = unavailablePreparation();
+  assertCurrentOwner();
   return { user, workspace: { draft, questions: state.questions || [] }, state, key };
 }
 
-function makeDemoCriteria() {
+function unavailablePreparation() {
   return {
-    statement_count: 8,
-    action_statement_count: 5,
-    metric_statement_count: 2,
+    available: false,
+    status: 'unavailable',
+    complete: false,
+    stages: [],
+    questions: [],
+    resume_evidence: {},
   };
-}
-
-async function mockAnalysis(request, signal, guest = false) {
-  const user = guest ? null : await request('/me', { signal });
-  const source = guest ? guestState() : storageGet(`${STATE_KEY}:${user.id}`, {});
-  const selected = source.selected_posting || mockPosting(source.selected_posting_id) || mockPostings[0];
-  if (signal?.aborted) throw new DOMException('요청이 취소되었습니다.', 'AbortError');
-  const { report } = mockReport(selected, guest);
-  if (guest) {
-    saveGuest({ report, completed: true });
-    return {
-      completed: true,
-      report_locked: true,
-      expires_at: guestState().expires_at,
-      draft: {
-        guest: true,
-        resume_attached: Boolean(source.filename || source.resume_text),
-        filename: source.filename || '',
-        mock_upload: source.mock_upload === true,
-        company: selected.company,
-        role: selected.role,
-        selected_posting_id: selected.id,
-        analysis_mode: 'job_posting',
-        report_locked: true,
-        demo_report: true,
-      },
-    };
-  }
-  const key = `${STATE_KEY}:${user.id}`;
-  const state = storageGet(key, {});
-  const savedReport = { ...report, demo: true };
-  storageSet(key, {
-    ...state,
-    report: savedReport,
-    report_created_at: new Date().toISOString(),
-  });
-  return { report: savedReport };
 }
 
 async function runBackendAnalysis(request, signal, onProgress) {
@@ -675,22 +1241,30 @@ async function runBackendAnalysis(request, signal, onProgress) {
       'resume_required',
     );
   if (!state.selected_posting_id || state.selected_posting?.source_type !== 'backend')
-    return mockAnalysis(request, signal, false);
+    error(
+      request.ApiError,
+      '이 공고는 평가 서버에 등록되어 있지 않습니다. 백엔드 등록 공고를 선택해 주세요.',
+      409,
+      'backend_posting_required',
+    );
 
-  const started = await request(
-    '/evaluations',
-    {
-      method: 'POST',
-      body: {
-        resume_id: workspace.draft.resume_id,
-        job_posting_id: state.selected_posting_id,
-      },
+  signal?.throwIfAborted();
+  const started = await request('/evaluations', {
+    method: 'POST',
+    body: {
+      resume_id: workspace.draft.resume_id,
+      job_posting_id: state.selected_posting_id,
     },
-  );
+  });
   const runId = started.run_id;
   let lastEventId = 0;
   onProgress?.({
-    run: { id: runId, status: started.status || 'queued', progress_percent: 0, current_stage: 'queued' },
+    run: {
+      id: runId,
+      status: started.status || 'queued',
+      progress_percent: 0,
+      current_stage: 'queued',
+    },
     events: [],
   });
   const deadline = Date.now() + 15 * 60 * 1000;
@@ -711,15 +1285,45 @@ async function runBackendAnalysis(request, signal, onProgress) {
     for (const event of update.events || []) {
       if (Number.isSafeInteger(event.id)) lastEventId = Math.max(lastEventId, event.id);
     }
-    onProgress?.(update);
+    onProgress?.({
+      run: Object.fromEntries(
+        ['id', 'status', 'current_stage', 'progress_percent', 'started_at', 'completed_at']
+          .filter((key) => Object.hasOwn(status, key))
+          .map((key) => [key, status[key]]),
+      ),
+      events: [],
+      flowEvents: sanitizeFlowProgressEvents(update.events),
+    });
     if (['failed', 'cancelled'].includes(status.status))
       error(
         request.ApiError,
-        status.failure_reason || `평가가 ${status.status} 상태로 종료되었습니다.`,
+        status.status === 'cancelled'
+          ? '분석이 취소되었습니다. 공고를 선택해 다시 시작할 수 있습니다.'
+          : '분석을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.',
         502,
-        'evaluation_failed',
+        status.status === 'cancelled' ? 'evaluation_cancelled' : 'evaluation_failed',
       );
     if (['completed', 'partial'].includes(status.status)) {
+      // A throttled tab may receive a terminal run with an older full event page.
+      // Drain bounded pages before showing the final report; telemetry failure
+      // must not turn a successfully completed evaluation into an application error.
+      let pageEvents = update.events;
+      for (let page = 0; Array.isArray(pageEvents) && pageEvents.length === 100 && page < 9; page += 1) {
+        const previousId = lastEventId;
+        let remaining;
+        try {
+          remaining = await request(`/evaluations/${encodeURIComponent(runId)}/progress?after_id=${lastEventId}`, { signal });
+        } catch { break; }
+        pageEvents = remaining.events;
+        for (const event of Array.isArray(pageEvents) ? pageEvents : [])
+          if (Number.isSafeInteger(event.id)) lastEventId = Math.max(lastEventId, event.id);
+        if (lastEventId <= previousId) break;
+        onProgress?.({
+          run: Object.fromEntries(['id', 'status', 'current_stage', 'progress_percent', 'started_at', 'completed_at']
+            .filter((key) => Object.hasOwn(status, key)).map((key) => [key, status[key]])),
+          events: [], flowEvents: sanitizeFlowProgressEvents(pageEvents),
+        });
+      }
       const result = await request(`/evaluations/${encodeURIComponent(runId)}/result`, {
         signal,
       });
@@ -739,12 +1343,13 @@ async function runBackendAnalysis(request, signal, onProgress) {
           502,
           'final_report_empty',
         );
-      const mapped = mapBackendReport(result, report.report_text);
+      const mapped = mapBackendReport(result, report.report_text, status);
       storageSet(key, {
         ...state,
+        pending_guest_analysis: false,
         report: mapped,
         suppress_latest_report: false,
-        report_created_at: new Date().toISOString(),
+        report_created_at: backendReportDate(status, result, report),
         questions: [],
       });
       return { report: mapped };
@@ -762,14 +1367,33 @@ async function runBackendAnalysis(request, signal, onProgress) {
       if (signal?.aborted) abort();
     });
   }
-  error(request.ApiError, '평가가 제한 시간 안에 끝나지 않았습니다. 잠시 후 상태를 확인해 주세요.', 504);
+  error(
+    request.ApiError,
+    '평가가 제한 시간 안에 끝나지 않았습니다. 잠시 후 상태를 확인해 주세요.',
+    504,
+  );
 }
 
 function toMarkdownForm(text, title = 'My resume') {
   const form = new FormData();
-  form.set('title', title);
+  form.set('title', String(title).slice(0, 200));
   form.set('file', new Blob([text], { type: 'text/markdown' }), 'resume.md');
   return form;
+}
+
+async function convertResume(body, request, signal, ApiError) {
+  const file = body?.get('file');
+  if (!file?.name) error(ApiError, '이력서 파일을 선택해 주세요.', 400);
+  if (file.size > 10 * 1024 * 1024) error(ApiError, '파일은 10MB 이하로 선택해 주세요.', 413);
+  const converted = await request('/local-data/convert-resume', {
+    method: 'POST',
+    body,
+    signal,
+    auth: false,
+  });
+  if (typeof converted.text !== 'string' || !converted.text.trim())
+    error(ApiError, '이력서에서 읽을 수 있는 본문을 찾지 못했습니다.', 422, 'resume_text_empty');
+  return { filename: file.name, text: converted.text };
 }
 
 function customPostings() {
@@ -778,28 +1402,43 @@ function customPostings() {
 
 function sessionMockWorkspace() {
   const state = guestState();
-  const result = state.report
-    ? { completed: state.completed === true, report_locked: true }
-    : {};
+  const realComplete = !demoSession() && state.completed === true && Boolean(state.local_run?.id) &&
+    ['completed', 'partial'].includes(state.local_run.status);
+  const running = !demoSession() && Boolean(state.local_run?.idempotency_key) &&
+    ['queued', 'running'].includes(state.local_run.status);
+  const result =
+    demoSession() && state.report
+      ? { completed: state.completed === true, report_locked: true }
+      : { completed: realComplete, report_locked: realComplete };
   return {
     draft: {
       guest: true,
-      resume_attached: Boolean(state.filename || state.resume_text),
+      resume_attached: Boolean(state.resume_text),
       filename: state.filename || '',
       company: state.selected_posting?.company || '',
       role: state.selected_posting?.role || '',
       analysis_mode: 'job_posting',
       career_target: state.career_target || null,
       selected_posting_id: state.selected_posting?.id || null,
-      report_locked: result.completed,
-      demo_report: Boolean(state.report?.demo),
-      mock_upload: state.mock_upload === true,
+      ...(running ? { selected_posting: Object.fromEntries(
+        ['id', 'company', 'role', 'description', 'source_type', 'source_name', 'source_external_id']
+          .map((field) => [field, state.selected_posting?.[field] || ''])) } : {}),
+      guest_run_id: state.local_run?.id ? `${LOCAL_GUEST_PREFIX}${state.local_run.id}` : null,
+      analysis_running: running,
+      analysis_status: state.local_run?.status || null,
+      ...(realComplete ? { storage_origin: 'frontend_guest' } : {}),
+      report_locked: result.report_locked,
+      preview_ready: false,
+      analysis_pending: false,
+      demo_report: demoSession() && Boolean(state.report?.demo),
       expires_at: state.expires_at || null,
     },
     questions: [],
     ...(state.expires_at ? { expires_at: state.expires_at } : {}),
     completed: result.completed,
     report_locked: result.report_locked || false,
+    preview_ready: false,
+    analysis_pending: false,
   };
 }
 
@@ -807,10 +1446,38 @@ export function enableBackendAdapter() {
   enabled = true;
 }
 
+export async function acceptBackendAuthCallback({ accessToken, refreshToken }, request, ApiError) {
+  if (
+    typeof accessToken !== 'string' ||
+    !accessToken ||
+    typeof refreshToken !== 'string' ||
+    !refreshToken
+  )
+    error(
+      ApiError,
+      '이메일 인증 정보가 완전하지 않습니다. 다시 로그인해 주세요.',
+      400,
+      'auth_callback_invalid',
+    );
+  // Validate the new identity before replacing a working session or its guest binding.
+  const profile = await request('/me', { auth: false, accessToken });
+  const user = profileUser(profile, ApiError);
+  sessionStorage.setItem(ACCESS_KEY, accessToken);
+  sessionStorage.setItem(REFRESH_KEY, refreshToken);
+  recordFlowEvent('local_data');
+  storageRemove(DEMO_SESSION_KEY);
+  enabled = true;
+  return makeSession({
+    id: user.id,
+    email: user.email || '',
+    name: user.name,
+    is_admin: user.is_admin,
+  });
+}
+
 export function enableDemoSession() {
   enabled = true;
-  storageRemove(ACCESS_KEY);
-  storageRemove(REFRESH_KEY);
+  clearMemberStorage();
   storageSet(DEMO_SESSION_KEY, true);
 }
 
@@ -830,15 +1497,40 @@ export async function backendApi(path, options, request, ApiError) {
   const body = options.body;
   const signal = options.signal;
   const cleanPath = decodePath(path);
+  if (/^\/admin\/evaluation-performance(?:\/[0-9a-f-]{36})?$/i.test(cleanPath) && method === 'GET') {
+    // Dashboard access is temporarily public; it does not grant account privileges.
+    return request(path, { signal, auth: false });
+  }
+  if (cleanPath === '/account/reports' && method === 'GET')
+    return savedReportList(path, request, signal, ApiError);
+  const reportContext = /^\/account\/reports\/([^/]+)\/context$/.exec(cleanPath);
+  if (reportContext && method === 'GET')
+    return savedReportContext(reportContext[1], request, signal, ApiError);
+  const savedReport = /^\/account\/reports\/([^/]+)$/.exec(cleanPath);
+  if (savedReport && method === 'GET')
+    return savedReportWorkspace(savedReport[1], request, signal, ApiError);
+  if (savedReport && method === 'DELETE') {
+    const id = savedReportId(savedReport[1], ApiError);
+    const localId = localRunId(id);
+    if (!localId) error(ApiError, '현재 서버에서 보고서 삭제를 지원하지 않습니다.', 501);
+    const token = sessionStorage.getItem(ACCESS_KEY);
+    const user = await backendUser(request, signal);
+    if (sessionStorage.getItem(ACCESS_KEY) !== token) throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+    await request(`/local-guest/reports/${encodeURIComponent(localId)}`, { method: 'DELETE', signal, accessToken: token });
+    if (sessionStorage.getItem(ACCESS_KEY) !== token) throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+    const key = `${STATE_KEY}:${user.id}`;
+    const state = storageGet(key, {});
+    if (state.report?.run_id === id) storageSet(key, { ...state, report: null, suppress_latest_report: true });
+    return { deleted: true };
+  }
   const needsCatalog =
     cleanPath === '/career-roles' ||
-    ((cleanPath === '/career-target' || cleanPath === '/guest/career-target') && method === 'PUT') ||
+    ((cleanPath === '/career-target' || cleanPath === '/guest/career-target') &&
+      method === 'PUT') ||
     cleanPath.startsWith('/job-postings') ||
     cleanPath.startsWith('/guest/job-postings');
   const catalog = needsCatalog
-    ? parseCareerCatalog(
-        (await request('/local-data/career-markdown', { signal, auth: false })).items,
-      )
+    ? await careerCatalog(request, signal)
     : null;
 
   if (cleanPath === '/career-roles') return { items: catalog.roles };
@@ -846,21 +1538,30 @@ export async function backendApi(path, options, request, ApiError) {
 
   if (cleanPath === '/auth/session') {
     const token = sessionStorage.getItem(ACCESS_KEY);
-    if (!token) return makeSession();
+    if (!token) return makeSession(null, await probeLocalGuest(request, signal));
+    const capabilities = probeLocalGuest(request, signal);
     try {
-      const user = await request('/me', { signal });
-      return makeSession({ id: user.id, email: user.email || '' });
+      const [realGuest, user] = await Promise.all([capabilities, backendUser(request, signal)]);
+      return makeSession({
+        id: user.id,
+        email: user.email || '',
+        name: user.name || '',
+        is_admin: user.is_admin,
+      }, realGuest);
     } catch (failure) {
       if (failure.status === 401) {
-        sessionStorage.removeItem(ACCESS_KEY);
-        sessionStorage.removeItem(REFRESH_KEY);
-        return makeSession();
+        storageRemove(ACCESS_KEY);
+        storageRemove(REFRESH_KEY);
+        return makeSession(null, await capabilities);
       }
       throw failure;
     }
   }
 
   const cancelEvaluation = /^\/evaluations\/([^/]+)\/cancel$/.exec(cleanPath);
+  if (cancelEvaluation && method === 'POST' && localRunId(decodeURIComponent(cancelEvaluation[1])))
+    return request(`/local-guest/analyses/${encodeURIComponent(localRunId(decodeURIComponent(cancelEvaluation[1])))}/cancel`,
+      { method, body: {}, signal, auth: false, keepalive: options.keepalive });
   if (cancelEvaluation && method === 'POST')
     return request(`/evaluations/${encodeURIComponent(cancelEvaluation[1])}/cancel`, {
       method,
@@ -880,6 +1581,7 @@ export async function backendApi(path, options, request, ApiError) {
       error(ApiError, '백엔드가 access token을 반환하지 않았습니다.', 502, 'missing_access_token');
     sessionStorage.setItem(ACCESS_KEY, result.access_token);
     if (result.refresh_token) sessionStorage.setItem(REFRESH_KEY, result.refresh_token);
+    recordFlowEvent('local_data');
     storageRemove(STATE_KEY);
     return { ...result, user: null, csrf_token: '' };
   }
@@ -894,6 +1596,7 @@ export async function backendApi(path, options, request, ApiError) {
     if (result.access_token) {
       sessionStorage.setItem(ACCESS_KEY, result.access_token);
       if (result.refresh_token) sessionStorage.setItem(REFRESH_KEY, result.refresh_token);
+      recordFlowEvent('local_data');
     }
     return {
       ...result,
@@ -903,9 +1606,7 @@ export async function backendApi(path, options, request, ApiError) {
   }
 
   if (cleanPath === '/auth/logout' && method === 'POST') {
-    sessionStorage.removeItem(ACCESS_KEY);
-    sessionStorage.removeItem(REFRESH_KEY);
-    storageRemove(STATE_KEY);
+    clearMemberStorage();
     return makeSession();
   }
 
@@ -920,6 +1621,7 @@ export async function backendApi(path, options, request, ApiError) {
       error(ApiError, '로그인 세션을 갱신하지 못했습니다. 다시 로그인해 주세요.', 401);
     sessionStorage.setItem(ACCESS_KEY, result.access_token);
     if (result.refresh_token) sessionStorage.setItem(REFRESH_KEY, result.refresh_token);
+    recordFlowEvent('local_data');
     return result;
   }
 
@@ -932,10 +1634,32 @@ export async function backendApi(path, options, request, ApiError) {
     );
 
   if (cleanPath === '/guest/workspace' && method === 'DELETE') {
+    const pending = guestState().local_run;
+    const id = pending?.id;
     storageRemove(GUEST_KEY);
+    if (id) await request(`/local-guest/analyses/${encodeURIComponent(id)}`, { method: 'DELETE', signal, auth: false });
+    else if (pending?.idempotency_key) await request('/local-guest/analyses/cancel-pending',
+      { method: 'POST', body: { idempotency_key: pending.idempotency_key }, auth: false, keepalive: true });
     return sessionMockWorkspace();
   }
-  if (cleanPath === '/guest/workspace') return sessionMockWorkspace();
+  if (cleanPath === '/guest/workspace') {
+    const guest = guestState();
+    if (guest.local_run?.id) {
+      let update;
+      try {
+        update = await request(`/local-guest/analyses/${encodeURIComponent(guest.local_run.id)}`, { signal, auth: false });
+      } catch (failure) {
+        signal?.throwIfAborted();
+        if (![404, 410].includes(failure.status)) throw failure;
+        if (guestState().local_run?.idempotency_key === guest.local_run.idempotency_key) storageRemove(GUEST_KEY);
+        error(ApiError, '임시 분석이 만료되었습니다. 이력서를 다시 첨부해 주세요.', 409, 'guest_expired');
+      }
+      signal?.throwIfAborted();
+      storeGuestRun(update, guest.local_run.idempotency_key, ApiError);
+      guestProgress(guestState(), options.onProgress, update);
+    }
+    return sessionMockWorkspace();
+  }
 
   if (cleanPath === '/workspace' && method === 'GET') {
     const { workspace } = await getMemberWorkspace(request, signal);
@@ -955,20 +1679,23 @@ export async function backendApi(path, options, request, ApiError) {
   }
 
   if (cleanPath === '/resume' && method === 'PUT') {
-    const old = getState();
+    if (typeof body?.resume_text !== 'string' || !body.resume_text.trim())
+      error(ApiError, '이력서 본문을 입력해 주세요.', 400, 'resume_invalid');
+    const user = await backendUser(request, signal);
+    const key = `${STATE_KEY}:${user.id}`;
+    const old = storageGet(key, {});
     const result = await request('/resumes', {
       method: 'POST',
       body: toMarkdownForm(body.resume_text, old.resume_title || '내 이력서'),
       signal,
     });
-    const user = await request('/me', { signal });
-    const key = `${STATE_KEY}:${user.id}`;
     storageSet(key, {
       ...storageGet(key, {}),
       resume_id: result.id,
       resume_title: result.title,
       career_target: storageGet(key, {}).career_target || null,
       report: null,
+      pending_guest_analysis: false,
       suppress_latest_report: true,
     });
     const { workspace } = await getMemberWorkspace(request, signal);
@@ -976,29 +1703,30 @@ export async function backendApi(path, options, request, ApiError) {
   }
 
   if (cleanPath === '/resume/upload' && method === 'POST') {
-    const file = body.get('file');
-    if (!file || !file.name) error(ApiError, '이력서 파일을 선택해 주세요.', 400);
-    if (!/\.(md|txt)$/i.test(file.name))
-      error(ApiError, '현재 백엔드 업로드는 Markdown 또는 텍스트 파일만 지원합니다.', 415);
+    const converted = await convertResume(body, request, signal, ApiError);
     const result = await request('/resumes', {
       method: 'POST',
-      body: toMarkdownForm(await file.text(), file.name.replace(/\.(md|txt)$/i, '')),
+      body: toMarkdownForm(converted.text, converted.filename.replace(/\.(md|txt|pdf|docx)$/i, '')),
       signal,
     });
-    const user = await request('/me', { signal });
+    const user = await backendUser(request, signal);
     const key = `${STATE_KEY}:${user.id}`;
     storageSet(key, {
       ...storageGet(key, {}),
       resume_id: result.id,
       resume_title: result.title,
       report: null,
+      pending_guest_analysis: false,
       suppress_latest_report: true,
     });
     const { workspace } = await getMemberWorkspace(request, signal);
     return workspace;
   }
 
-  if ((cleanPath === '/career-target' || cleanPath === '/guest/career-target') && method === 'PUT') {
+  if (
+    (cleanPath === '/career-target' || cleanPath === '/guest/career-target') &&
+    method === 'PUT'
+  ) {
     const careerTarget = {
       role_id: body.role_id || 'custom',
       label: body.role || catalog.roles.find((role) => role.id === body.role_id)?.label || '',
@@ -1008,23 +1736,16 @@ export async function backendApi(path, options, request, ApiError) {
       saveGuest({ career_target: careerTarget });
       return sessionMockWorkspace();
     }
-    const user = await request('/me', { signal });
+    const user = await backendUser(request, signal);
     const key = `${STATE_KEY}:${user.id}`;
     const state = storageGet(key, {});
-    const fingerprint = `${Date.now()}-${careerTarget.role_id}`;
-    const preparation = {
-      fingerprint,
-      complete: false,
-      stages: [],
-      questions: [],
-      role_reference: { criteria: [] },
-      resume_evidence: makeDemoCriteria(),
-    };
+    const preparation = unavailablePreparation();
     storageSet(key, {
       ...state,
       career_target: careerTarget,
       preparation,
       report: null,
+      pending_guest_analysis: false,
       suppress_latest_report: true,
     });
     const { workspace } = await getMemberWorkspace(request, signal);
@@ -1032,20 +1753,12 @@ export async function backendApi(path, options, request, ApiError) {
   }
 
   if (cleanPath === '/preparation' && method === 'POST') {
-    const user = await request('/me', { signal });
-    const key = `${STATE_KEY}:${user.id}`;
-    const state = storageGet(key, {});
-    const preparation = state.preparation || {};
-    if (body.fingerprint !== preparation.fingerprint)
-      error(ApiError, '희망 직무가 변경되었습니다. 다시 시작해 주세요.', 409, 'preparation_stale');
-    const stages = new Map((preparation.stages || []).map((stage) => [stage.id, stage]));
-    stages.set(body.stage, { id: body.stage, status: 'complete', detail: '화면 체험용 단계 완료' });
-    const next = { ...preparation, stages: [...stages.values()] };
-    next.complete = ['resume', 'role', 'report'].every((id) => stages.get(id)?.status === 'complete');
-    const updated = { ...state, preparation: next };
-    storageSet(key, updated);
-    const { workspace } = await getMemberWorkspace(request, signal);
-    return { ...workspace, preparation: next, draft: { ...workspace.draft, preparation: next } };
+    error(
+      ApiError,
+      '현재 평가 서버는 사전 준비 분석을 제공하지 않습니다. 채용공고를 선택한 뒤 실제 분석을 시작해 주세요.',
+      501,
+      'preparation_unavailable',
+    );
   }
 
   if (cleanPath.startsWith('/job-postings')) {
@@ -1059,18 +1772,14 @@ export async function backendApi(path, options, request, ApiError) {
       const id = decodeURIComponent(select[2]);
       let posting = mockPosting(id, catalog.postings);
       if (!posting && !id.startsWith('mock-')) {
-        const raw = await request(`/jobs/${encodeURIComponent(id)}`, { signal });
-        const company = raw.company_id
-          ? await request(`/companies/${encodeURIComponent(raw.company_id)}`, { signal })
-          : null;
-        posting = mapJob(raw, company?.name || '');
+        posting = await backendPosting(id, request, signal, catalog.postings);
       }
       if (!posting) error(ApiError, '채용공고를 찾을 수 없습니다.', 404);
       if (isGuest) {
         saveGuest({ selected_posting: posting });
         return sessionMockWorkspace();
       }
-      const user = await request('/me', { signal });
+      const user = await backendUser(request, signal);
       const key = `${STATE_KEY}:${user.id}`;
       const state = storageGet(key, {});
       storageSet(key, {
@@ -1078,6 +1787,7 @@ export async function backendApi(path, options, request, ApiError) {
         selected_posting: posting,
         selected_posting_id: posting.source_type === 'backend' ? posting.id : '',
         report: null,
+        pending_guest_analysis: false,
         suppress_latest_report: true,
         questions: [],
       });
@@ -1091,14 +1801,16 @@ export async function backendApi(path, options, request, ApiError) {
       if (method === 'POST') bookmarks.add(id);
       else bookmarks.delete(id);
       storageSet(BOOKMARKS_KEY, [...bookmarks]);
-      const posting = mockPosting(id, catalog.postings) || (await backendPosting(id, request, signal));
+      const posting =
+        mockPosting(id, catalog.postings) ||
+        (await backendPosting(id, request, signal, catalog.postings));
       return { posting: { ...posting, is_saved: bookmarks.has(id) } };
     }
 
     if (detail && method === 'GET') {
       const id = decodeURIComponent(detail[1]);
       const posting = mockPosting(id, catalog.postings);
-      return { posting: posting || (await backendPosting(id, request, signal)) };
+      return { posting: posting || (await backendPosting(id, request, signal, catalog.postings)) };
     }
 
     if (customEdit && method === 'DELETE') {
@@ -1127,40 +1839,12 @@ export async function backendApi(path, options, request, ApiError) {
     }
 
     if (cleanPath === '/job-postings' && method === 'GET') {
-      let backend = [];
-      if (sessionStorage.getItem(ACCESS_KEY)) {
-        backend = await backendJobs(request, catalog.postings);
-      }
-      const registeredSources = new Set(
-        backend
-          .filter((posting) => posting.source_name === 'local_markdown')
-          .map((posting) => posting.source_external_id),
-      );
-      const localPostings = catalog.postings.filter(
-        (posting) => !registeredSources.has(posting.source_external_id),
-      );
-      const available = [...backend, ...localPostings, ...mockPostings, ...customPostings()];
+      const authenticated = Boolean(sessionStorage.getItem(ACCESS_KEY));
+      const available = authenticated
+        ? await backendJobs(request, catalog.postings, signal)
+        : [...catalog.postings];
       const params = new URLSearchParams(path.split('?')[1] || '');
-      if (params.get('role_id') && params.get('role_id') !== 'custom') {
-        const selectedRole = catalog.roles.find((role) => role.id === params.get('role_id'));
-        if (selectedRole) params.set('role', selectedRole.label);
-      }
-      if (params.get('role_id')) {
-        const label =
-          params.get('role_id') === 'custom'
-            ? params.get('role') || '선택 직무'
-            : catalog.roles.find((role) => role.id === params.get('role_id'))?.label || '선택 직무';
-        const generated = {
-          ...mockPostings[0],
-          id: `mock-role-${encodeURIComponent(label)}`,
-          company: 'CareerLens 시연 기업',
-          role: label,
-          description: `${label}의 관련 업무와 요구 역량을 확인하는 시연용 가상 공고입니다. 실제 채용공고가 아니며, 백엔드 평가에도 사용할 수 없습니다.`,
-          source_type: 'example',
-        };
-        if (!available.some((posting) => posting.role.toLocaleLowerCase().includes(label.toLocaleLowerCase())))
-          available.push(generated);
-      }
+      const roleScope = applyPostingRoleScope(params, catalog.roles);
       const filtered = filteredPostings(available, params);
       const page = Math.max(1, Number(params.get('page')) || 1);
       const pageSize = Math.max(1, Number(params.get('page_size')) || 12);
@@ -1168,15 +1852,24 @@ export async function backendApi(path, options, request, ApiError) {
       return {
         items,
         total: filtered.length,
+        available_total: available.length,
+        ...roleScope,
         page,
         page_size: pageSize,
         filters: {
+          roles: [
+            ...new Set(available.map((item) => item.role_category || item.role).filter(Boolean)),
+          ].sort((a, b) => a.localeCompare(b, 'ko')),
           locations: [...new Set(available.map((item) => item.location))],
           employment_types: [...new Set(available.map((item) => item.employment_type))],
           experience_levels: [...new Set(available.map((item) => item.experience_level))],
           skills: [...new Set(available.flatMap((item) => item.skills))],
         },
-        mock_notice: '가상 예시 및 직접 입력 공고는 화면 체험용이며 실제 백엔드 평가에 사용할 수 없습니다.',
+        mock_notice: authenticated
+          ? ''
+          : localGuestCapabilities.get(request) === true
+            ? '가상 공고로 실제 분석을 진행합니다. 분석한 결과는 로그인 후 확인할 수 있습니다.'
+            : '공고 미리보기입니다. 실제 평가는 로그인 후 백엔드 등록 공고로 진행합니다.',
       };
     }
   }
@@ -1193,24 +1886,29 @@ export async function backendApi(path, options, request, ApiError) {
   }
 
   const example = /^\/resume-examples\/([^/]+)$/.exec(cleanPath);
-  if (example && method === 'GET') return { example: { ...resumeExample, id: decodeURIComponent(example[1]) } };
+  if (example && method === 'GET')
+    return { example: { ...resumeExample, id: decodeURIComponent(example[1]) } };
   if (cleanPath === '/example' && method === 'POST') {
-    const result = await backendApi('/resume', {
-      method: 'PUT',
-      body: { resume_text: resumeExample.resume_text },
-      signal,
-    }, request, ApiError);
+    const result = await backendApi(
+      '/resume',
+      {
+        method: 'PUT',
+        body: { resume_text: resumeExample.resume_text },
+        signal,
+      },
+      request,
+      ApiError,
+    );
     return result;
   }
 
   if (cleanPath === '/guest/resume/upload' && method === 'POST') {
-    const file = body.get('file');
-    if (!file || !file.name) error(ApiError, '이력서 파일을 선택해 주세요.', 400);
-    const isText = /\.(md|txt)$/i.test(file.name);
+    const converted = await convertResume(body, request, signal, ApiError);
     saveGuest({
-      filename: file.name,
-      resume_text: isText ? await file.text() : '',
-      mock_upload: !isText,
+      filename: converted.filename,
+      resume_text: converted.text,
+      report: null,
+      completed: false,
     });
     return sessionMockWorkspace();
   }
@@ -1226,64 +1924,153 @@ export async function backendApi(path, options, request, ApiError) {
   }
 
   if (cleanPath === '/guest/analysis' && method === 'POST') {
-    return mockAnalysis(request, signal, true);
+    signal?.throwIfAborted();
+    const guest = guestState();
+    if (!guest.resume_text || !(Date.parse(guest.expires_at) > Date.now()))
+      error(ApiError, '임시 이력서가 만료되었거나 첨부되지 않았습니다. 다시 첨부해 주세요.', 409, 'guest_expired');
+    if (!guest.selected_posting?.id)
+      error(ApiError, '채용공고를 먼저 선택해 주세요.', 400, 'posting_required');
+    if (localGuestCapabilities.get(request) === true || guest.local_run?.idempotency_key)
+      return runGuestAnalysis(request, signal, options.onProgress);
+    saveGuest({ preview_ready: false, analysis_pending: false, report_locked: false, completed: false, report: null });
+    error(ApiError, '비회원 분석 서버에 연결되지 않았습니다. 잠시 후 다시 시도해 주세요.', 503, 'guest_analysis_unavailable');
+  }
+
+  if (cleanPath === '/guest/analysis/cancel' && method === 'POST') {
+    const pending = guestState().local_run;
+    const id = pending?.id;
+    if (guestState().resume_text)
+      saveGuest({ preview_ready: false, analysis_pending: false, report_locked: false, completed: false, report: null, local_run: null });
+    if (id) await request(`/local-guest/analyses/${encodeURIComponent(id)}/cancel`,
+      { method: 'POST', body: {}, signal, auth: false, keepalive: options.keepalive });
+    else if (pending?.idempotency_key) await request('/local-guest/analyses/cancel-pending',
+      { method: 'POST', body: { idempotency_key: pending.idempotency_key }, auth: false, keepalive: true });
+    return sessionMockWorkspace();
   }
 
   if (cleanPath === '/guest/claim' && method === 'POST') {
     const guest = guestState();
-    const { key } = await getMemberWorkspace(request, signal);
-    let report = guest.report;
-    if (guest.resume_text) {
-      const result = await request('/resumes', {
-        method: 'POST',
-        body: toMarkdownForm(guest.resume_text, guest.filename || 'Guest resume'),
-        signal,
+    if (!guest.resume_text)
+      error(
+        ApiError,
+        '임시 이력서가 만료되었거나 첨부되지 않았습니다. 다시 첨부해 주세요.',
+        409,
+        'guest_expired',
+      );
+    const token = sessionStorage.getItem(ACCESS_KEY);
+    const guestSnapshot = JSON.stringify(guest);
+    let transferring = true;
+    const assertCurrentClaim = () => {
+      signal?.throwIfAborted();
+      if (sessionStorage.getItem(ACCESS_KEY) !== token ||
+          (transferring && JSON.stringify(guestState()) !== guestSnapshot))
+        throw new DOMException('계정 또는 임시 이력서가 변경되어 연결을 취소했습니다.', 'AbortError');
+    };
+    // Check both sides of every transport, including helpers and transports that
+    // ignore AbortSignal. Never upload with a replacement account's credentials.
+    const claimRequest = async (...args) => {
+      assertCurrentClaim();
+      const value = await request(...args);
+      assertCurrentClaim();
+      return value;
+    };
+    claimRequest.ApiError = request.ApiError;
+    if (guest.local_run?.id) {
+      const result = await claimRequest(`/local-guest/analyses/${encodeURIComponent(guest.local_run.id)}/claim`,
+        { method: 'POST', body: {}, signal, accessToken: token });
+      // The frontend server has already authenticated this token against /me
+      // and atomically assigned the report. Reuse its verified owner instead
+      // of inserting another identity request before displaying the result.
+      if (typeof result.owner_user_id !== 'string' ||
+          !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(result.owner_user_id))
+        error(ApiError, '보고서를 연결한 계정을 확인하지 못했습니다. 다시 시도해 주세요.', 502, 'report_owner_invalid');
+      const key = `${STATE_KEY}:${result.owner_user_id}`;
+      const workspace = localReportWorkspace(result, ApiError);
+      const snapshot = result.job_snapshot;
+      const selected = snapshot ? mapJob(snapshot, snapshot.company_name || '') : guest.selected_posting;
+      // This report is already calculated. Claiming only associates it with the
+      // verified account; it never uploads a resume or queues another evaluation.
+      storageSet(key, {
+        career_target: guest.career_target || null,
+        selected_posting: selected ? { ...selected, source_type: 'frontend_guest' } : null,
+        selected_posting_id: selected?.id || result.job_id || '',
+        claimed_resume_text: typeof result.resume_text === 'string' ? result.resume_text : guest.resume_text,
+        report: workspace.draft.report, report_created_at: workspace.draft.created_at,
+        pending_guest_analysis: false, suppress_latest_report: true, questions: [],
       });
-      const user = await request('/me', { signal });
-      storageSet(`${STATE_KEY}:${user.id}`, {
-        ...storageGet(`${STATE_KEY}:${user.id}`, {}),
-        resume_id: result.id,
-        resume_title: result.title,
-      });
+      storageRemove(GUEST_KEY);
+      transferring = false;
+      return { ...workspace, draft: { ...workspace.draft,
+        resume_text: typeof result.resume_text === 'string' ? result.resume_text : guest.resume_text,
+        career_target: guest.career_target || null,
+        selected_posting: selected ? { ...selected, source_type: 'frontend_guest' } : null,
+        pending_guest_analysis: false,
+      } };
     }
-    if (report) report = { ...report, demo: true };
-    const state = storageGet(key, {});
+    const user = await backendUser(claimRequest, signal);
+    const key = `${STATE_KEY}:${user.id}`;
+    let selected = null;
+    if (guest.selected_posting) {
+      const records = await backendJobRecords(claimRequest, signal);
+      const matching = records.find(
+        (posting) =>
+          (guest.selected_posting.source_type === 'backend' &&
+            posting.id === guest.selected_posting.id) ||
+          (guest.selected_posting.source_external_id &&
+            posting.source_name === guest.selected_posting.source_name &&
+            posting.source_external_id === guest.selected_posting.source_external_id),
+      );
+      if (matching)
+        selected = await backendPosting(matching.id, claimRequest, signal, [guest.selected_posting]);
+    }
+    const result = await claimRequest('/resumes', {
+      method: 'POST',
+      body: toMarkdownForm(guest.resume_text, guest.filename || 'Guest resume'),
+      signal,
+    });
+    assertCurrentClaim();
     storageSet(key, {
-      ...state,
-      ...(guest.career_target ? { career_target: guest.career_target } : {}),
-      ...(guest.selected_posting ? { selected_posting: guest.selected_posting } : {}),
-      ...(report
-        ? { report, report_created_at: new Date().toISOString(), suppress_latest_report: false }
-        : {}),
+      resume_id: result.id,
+      resume_title: result.title,
+      career_target: guest.career_target || null,
+      selected_posting: selected,
+      selected_posting_id: selected?.id || '',
+      report: null,
+      pending_guest_analysis: false,
+      suppress_latest_report: true,
+      questions: [],
     });
     storageRemove(GUEST_KEY);
-    const refreshed = await getMemberWorkspace(request, signal);
-    return {
-      draft: {
-        ...refreshed.workspace.draft,
-        ...(report ? { report, report_locked: false } : {}),
-      },
-      questions: refreshed.workspace.questions,
-    };
+    transferring = false;
+    const refreshed = await getMemberWorkspace(claimRequest, signal);
+    return refreshed.workspace;
   }
 
   if (cleanPath === '/analysis' && method === 'POST') {
-    const user = await request('/me', { signal });
-    const state = storageGet(`${STATE_KEY}:${user.id}`, {});
+    const user = await backendUser(request, signal);
+    const key = `${STATE_KEY}:${user.id}`;
+    const state = storageGet(key, {});
     if (state.selected_posting?.source_type !== 'backend')
-      return mockAnalysis(request, signal, false);
+      error(
+        ApiError,
+        '이 공고는 평가 서버에 등록되어 있지 않습니다. 백엔드 등록 공고를 선택해 주세요.',
+        409,
+        'backend_posting_required',
+      );
+    // Consume once before creation or further loading. An uncertain response,
+    // cancellation or reload must not automatically create a second evaluation.
+    if (state.pending_guest_analysis === true)
+      storageSet(key, { ...state, pending_guest_analysis: false, report: null, suppress_latest_report: true });
     return runBackendAnalysis(request, signal, options.onProgress);
   }
 
-  error(
-    ApiError,
-    '현재 백엔드에 없는 기능입니다. 이 화면은 실제 데이터에 반영되지 않습니다.',
-    501,
-  );
+  error(ApiError, '현재 백엔드에 없는 기능입니다. 이 화면은 실제 데이터에 반영되지 않습니다.', 501);
 }
 
-async function backendPosting(id, request, signal) {
+async function backendPosting(id, request, signal, catalogPostings = []) {
   const raw = await request(`/jobs/${encodeURIComponent(id)}`, { signal });
+  if (!raw || raw.id !== id)
+    error(request.ApiError, '채용공고 상세 형식이 올바르지 않습니다.', 502, 'job_invalid');
   let company = null;
   if (raw.company_id) {
     try {
@@ -1293,5 +2080,5 @@ async function backendPosting(id, request, signal) {
       company = null;
     }
   }
-  return mapJob(raw, company?.name || '');
+  return mapJob(raw, company?.name || '', catalogPostings);
 }

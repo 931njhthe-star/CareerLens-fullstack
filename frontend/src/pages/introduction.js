@@ -10,20 +10,7 @@ export function introductionPage() {
         </button>
       </div>
       <div class="introduction__body">
-        <div class="introduction__visual" aria-hidden="true">
-          <div class="introduction__document">
-            <span class="introduction__document-mark">${icon('file', 25)}</span>
-            <span class="introduction__line introduction__line--title"></span>
-            <span class="introduction__line"></span>
-            <span class="introduction__line introduction__line--short"></span>
-            <span class="introduction__rule"></span>
-            <span class="introduction__line"></span>
-            <span class="introduction__line introduction__line--short"></span>
-          </div>
-          <span class="introduction__lens"><span></span></span>
-          <span class="introduction__connection"></span>
-          <span class="introduction__destination">${icon('briefcase', 23)}</span>
-        </div>
+        <div class="introduction__visual" aria-hidden="true" data-intro-journey></div>
         <div class="introduction__copy">
           <p class="introduction__wordmark">Career<span>Lens</span></p>
           <h1 id="introduction-title">경험을 살피고,<br />다음 기회를 준비하세요.</h1>

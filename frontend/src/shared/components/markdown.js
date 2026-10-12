@@ -7,7 +7,12 @@ function inlineMarkdown(value) {
     preserved.push(html);
     return token;
   };
-  let content = value.replace(/`([^`]+)`/g, (_, code) => preserve(`<code>${escapeHtml(code)}</code>`));
+  let content = value
+    .replace(/\u0000/g, '')
+    .replace(/\\\|/g, '|')
+    .replace(/`([^`]+)`/g, (_, code) => preserve(`<code>${escapeHtml(code)}</code>`));
+  // The backend uses plain <br> in escaped table cells. No other raw HTML is accepted.
+  content = content.replace(/<br\s*\/?>/gi, () => preserve('<br>'));
   content = content.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, (_, label, href) => {
     try {
       const url = new URL(href);
@@ -26,12 +31,21 @@ function inlineMarkdown(value) {
 }
 
 function tableCells(line) {
-  return line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim());
+  const source = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  const cells = [];
+  let cell = '';
+  let escaped = false;
+  for (const character of source) {
+    if (character === '|' && !escaped) {
+      cells.push(cell.trim());
+      cell = '';
+    } else {
+      cell += character;
+    }
+    escaped = character === '\\' && !escaped;
+  }
+  cells.push(cell.trim());
+  return cells;
 }
 
 function isTableDivider(line) {
@@ -59,11 +73,19 @@ export function renderMarkdown(markdown = '') {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    const fence = /^\s*(`{3,}|~{3,})[^`~]*$/.exec(line);
     const heading = /^(#{1,6})\s+(.+)$/.exec(line);
     const listItem = /^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/.exec(line);
     const quote = /^\s*>\s?(.*)$/.exec(line);
 
-    if (!line.trim()) {
+    if (fence) {
+      flushParagraph();
+      closeList();
+      const code = [];
+      const closing = new RegExp(`^\\s*${fence[1][0]}{${fence[1].length},}\\s*$`);
+      while (++index < lines.length && !closing.test(lines[index])) code.push(lines[index]);
+      output.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+    } else if (!line.trim()) {
       flushParagraph();
       closeList();
     } else if (heading) {

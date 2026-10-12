@@ -1,4 +1,5 @@
 import { api } from '../../shared/api/client.js';
+import { publicErrorMessage } from '../../shared/api/error-messages.js';
 import { escapeHtml as e } from '../../shared/components/ui.js';
 
 const PAGE_SIZE = 12;
@@ -192,7 +193,7 @@ export function bindResumeExamples({ hasContent, onSelect, onError }) {
         <p
           class="notice error"
           role="alert">
-          ${e(error.message)}
+          ${e(publicErrorMessage(error))}
         </p>
         <button
           class="button secondary compact"

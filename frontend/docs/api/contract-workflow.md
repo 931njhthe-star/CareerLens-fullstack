@@ -1,9 +1,44 @@
-# 별도 저장소의 API 명세 전달
+# 프론트엔드·백엔드 API 계약
 
-백엔드가 API 계약의 원본을 관리하고, 프론트엔드는 승인한 명세를 자기 저장소에 복사해 버전을 고정합니다.
-프론트엔드 실행과 빌드는 백엔드 저장소의 체크아웃 경로나 파일에 의존하지 않습니다.
+## 현재 연결: FastAPI develop (2026-10-09)
 
-## 현재 준비된 기능
+현재 로컬 백엔드는 `origin/develop`의 `57bd0cf`를 수정 없이 사용합니다. 프론트는 승인된 페이지·모션을 보존하고 `src/shared/api/backend-adapter.js`에서 이전 화면 호출을 FastAPI 계약으로 변환합니다. **실제 평가는 로그인 후 실행**하는 정책을 사용자가 확인했습니다. 아래의 OpenAPI 1.7.1 세션·워크스페이스 계약은 레거시 기록이며 현재 서버 기능 목록이 아닙니다.
+
+브라우저 → 같은 출처 `/api/v1` → 프론트 `server.py` 프록시 → FastAPI 순서입니다. API origin은 프론트 `BACKEND_URL`에, DB·모델 비밀은 백엔드 `.env`에만 둡니다. 프록시는 Bearer `Authorization`, `Idempotency-Key`, `Last-Event-ID`를 전달합니다. Supabase URL을 CareerLens API origin으로 대체할 수 없습니다.
+
+| 화면 책임 | 현재 연결 |
+| --- | --- |
+| 로그인·가입·토큰 갱신 | `/auth/login`, `/auth/signup`, `/auth/refresh`, `/me` |
+| 파일 본문 변환 | 프론트 전용 `POST /local-data/convert-resume`, multipart `file` → `{filename, text}` |
+| 인증된 이력서 저장 | UTF-8 Markdown multipart로 백엔드 `POST /resumes`; 조회는 `/resumes`와 `/resumes/{id}` |
+| 로그인 전 탐색 자료 | 프론트 전용 `GET /local-data/career-markdown` → `{items:[{id, filename, content, role_category?}]}` |
+| 실제 평가 공고 | 백엔드 `/jobs`, `/jobs/{id}`에 등록된 UUID |
+| 평가 생성 | `POST /evaluations`에 `{resume_id, job_posting_id}` |
+| 진행 상태 | `/evaluations/{run_id}/progress`, 404일 때 `/evaluations/{run_id}` 대체 조회 |
+| 취소 | `POST /evaluations/{run_id}/cancel`, 화면 이탈·취소 시 keepalive |
+| 결과·보고서 | `/evaluations/{run_id}/result` 및 `/reports/{report_id}` → 화면 계약 `{ report }` |
+
+PDF/DOCX/TXT/MD 변환은 10MiB 이하 파일을 메모리에서 처리하며 원본을 디스크에 저장하지 않습니다. 변환 응답에는 추출문이 포함됩니다. 로그인 전 준비 자료는 프론트 세션 저장소에만 보관하고 첫 유효 첨부부터 30분 유효 기간을 적용합니다. 인증 후 이력서를 실제 백엔드로 업로드하고 직무·유효한 백엔드 공고 선택을 이어갑니다. 이전 서버의 게스트 분석·SQL 임시 테이블·완료 보고서 claim과는 다릅니다. 실제 backend가 받은 Markdown은 Supabase Storage와 테이블에 보관됩니다.
+
+로그인 전 공고 원본은 `CAREERLENS_JOB_POSTINGS_DIR` 또는 형제 백엔드의 `app/modules/job_postings`에서 읽습니다. 숫자 이름의 가상 공고만 제공하며 목록·작성 프롬프트·하위 중복 폴더를 제외합니다. 프론트 빌드 자체가 백엔드 checkout을 필요로 하지는 않지만 이 탐색 자료 endpoint는 해당 설정 폴더를 필요로 합니다. 실제 평가에서 존재하지 않는 공고 ID나 시연 보고서로 우회하지 않습니다.
+
+분류는 프론트 서버가 동일 폴더의 `00_목록.md`에서 번호·파일명이 일치하는 행의 **직무 유형**을 읽어 선택적 `role_category`로 제공합니다. 목차 자체는 공고 항목이 아니며 Markdown 링크를 따라 파일을 읽지 않습니다. 백엔드 공고는 `source_name=local_markdown`과 `source_external_id`가 모두 일치할 때만 원본 분류를 보완하고 등록 UUID는 유지합니다.
+
+프론트 화면용 `/job-postings` 호출의 `role_scope=category|exact|all`은 프론트 어댑터에서 처리합니다. 공고 선택의 기본값은 `category`이며 선택 직무의 분류로 조회합니다. `exact`는 세부 직무명이 같은 공고, `all`은 선택 직무 제한 없는 목록입니다. 응답의 `total`은 조회된 수, `available_total`은 조회 전 전체 수이며 `role_scope`·`role_category`로 실제 적용 범위를 설명합니다. 분류 정보가 없는 사전 정의 직무는 전체를 표시하고, 직접 입력 직무는 기존 키워드 검색을 유지합니다. `role_scope` 없는 기존 호출은 직무명 검색 동작을 유지합니다. 백엔드에 새 필터 API나 스키마를 추가하지 않습니다.
+
+새 평가 ID를 추적해 취소 요청을 서버에도 전달합니다. 생성 요청이 서버에 접수된 뒤 UI가 취소됐을 가능성도 고려하며, 타이머 종료나 브라우저 fetch 취소를 서버 완료·취소의 증거로 사용하지 않습니다. 완료 상태는 `completed` 또는 `partial`이며 최종 Markdown이 있는 유효한 보고서를 받은 뒤에만 화면에 적용합니다. 이전 화면 계약으로 반환할 때도 `{ draft, questions }` 대신 `{ report }`를 사용합니다.
+
+실제 평가 요약·상태·Markdown 영역은 서버가 반환한 네 축·근거·validation 값을 보존합니다. 기존 스튜디오 피라미드는 실제 평가와 무관하다고 표시한 시연 그래픽으로 유지하며 실제 점수 그래프로 변경하지 않았습니다. `null` 종합점수는 보류이며 임의 평균·랜덤 값으로 채우지 않습니다. 모션 진행값은 시각적 상태입니다. 흰색 화면 전환·고정 원·가속·방사형 섬유·최소 4초·취소 처리와 보고서 윤곽 전환은 프론트 책임으로 유지합니다. 명시적 시연 데이터와 실제 결과는 구분합니다.
+
+현재 FastAPI에는 비회원 실제 평가, OAuth, 비밀번호 재설정, 기존 서버 작업공간 API가 없습니다. 프론트에서 지원되지 않는 기능을 실제 제공하는 것처럼 표시하지 않습니다. 백엔드 워커는 API와 별도 프로세스입니다. 새 평가 우선 정책 SQL과 체크포인트 스키마는 실제 DB 적용 상태를 확인해야 하며 코드 pull이나 `/health` 성공만으로 확인되지 않습니다.
+
+현재 호환성은 서버 프록시·변환 테스트, 어댑터 API 가짜 응답 테스트, 화면 검증으로 확인합니다. 다음 snapshot 동기화 도구의 `--check`는 저장된 레거시 파일의 버전·해시만 확인합니다. 백엔드 소스 변경·원격 스키마 적용·유료 모델 smoke 실행은 프론트 UI 검증에 포함하지 않습니다.
+
+---
+
+다음 내용은 이전 1.5–1.7.1 계약과 전달 절차를 보존한 기록입니다. 현재 FastAPI 런타임 설명은 위 절을 우선합니다. 과거 색상·물결·질문 단계 설명 역시 현재 승인된 모션을 변경하는 지시가 아닙니다.
+
+## 보존된 1.7.1 계약 도구와 과거 흐름
 
 `scripts/sync-api-contract.mjs`는 Node.js 18 이상의 내장 기능만 사용합니다.
 외부 패키지나 프레임워크 설정 없이 OpenAPI JSON 파일 또는 HTTP(S) URL을 읽고 다음을 확인합니다.
@@ -15,18 +50,14 @@
 이는 전달 파일의 최소 검증입니다. 경로별 요청·응답 스키마, `$ref` 해석, 호환성까지 검사하는 전체 OpenAPI 검증은 포함하지 않습니다.
 검증에 실패하면 기존 명세와 버전 기록을 변경하지 않습니다. 검증 성공 후 임시 파일을 통해 각 파일을 교체합니다.
 
-<<<<<<< Updated upstream
-실제 API와 명세는 아직 없으므로 현재 `openapi.json`, `contract-lock.json`은 만들지 않았습니다.
-API 클라이언트와 TypeScript 타입 생성기도 아직 구현하지 않았습니다.
-=======
 `src/shared/api/openapi.json`, `contract-lock.json`에 실제 API snapshot을 동기화했습니다.
 공통 요청 처리는 `src/shared/api/client.js`에 구현했습니다. 런타임은 브라우저 기본 JavaScript이며 TypeScript 타입 생성기는 사용하지 않습니다.
 
-현재 화면은 버전 **1.7.1**의 인증·워크스페이스 계약을 사용합니다. `.env`의 `BACKEND_URL`은 이 계약을 구현한 CareerLens API origin입니다. 프론트엔드 프록시 주소만 바꾸어 임의의 API나 Supabase REST endpoint가 이 계약을 충족하게 되지는 않습니다. 별도 API를 쓰는 팀은 같은 세션·CSRF·요청·응답 계약을 제공하거나 백엔드에 어댑터를 구현해야 합니다. 각자의 DB URL과 외부 API 키는 백엔드 `.env`에서 설정합니다.
+이전 화면은 버전 **1.7.1**의 인증·워크스페이스 계약을 사용했습니다. `.env`의 `BACKEND_URL`은 이 계약을 구현한 CareerLens API origin입니다. 프론트엔드 프록시 주소만 바꾸어 임의의 API나 Supabase REST endpoint가 이 계약을 충족하게 되지는 않습니다. 별도 API를 쓰는 팀은 같은 세션·CSRF·요청·응답 계약을 제공하거나 백엔드에 어댑터를 구현해야 합니다. 각자의 DB URL과 외부 API 키는 백엔드 `.env`에서 설정합니다.
 
 희망 직무 흐름은 `GET /api/v1/career-roles`로 선택지를 받고, `PUT /api/v1/career-target`으로 직무와 선택적 점검 요청을 저장합니다. `POST /api/v1/preparation`은 `resume` → `role` → `report` 단계와 저장된 입력의 `fingerprint`를 전달합니다. 서버가 해당 단계의 `status: complete`를 확인한 경우에만 그 단계를 완료로 처리합니다. 이 질문 준비 과정은 텍스트로 상태를 표시하며 눈 모션이나 최소 대기 시간을 두지 않습니다. 전체 완료 후 추가 질문을 열고, 사용자가 답변을 제출할 때 기존 `POST /api/v1/analysis`로 최종 보고서를 받습니다. 점검 요청은 보완 질문에 반영하며 임의 가산점으로 쓰지 않습니다.
 
-사전 분석 상태와 완료 확인은 `src/features/analysis/preparation-state.js`, API 호출·오류·화면 이탈 처리는 `preparation.js`에서 분리합니다. 최종 보고서의 요청·응답 검사는 `report-state.js`, 전체 화면 모달은 `report-loading.js`, 최소 표시 시간과 종료 모션 대기는 `preparation-transition.js`에서 담당합니다. 질문 준비 재시도는 완료한 단계를 건너뜁니다. 평가 중 사용자가 취소하거나 화면을 떠나면 브라우저 요청을 중단하고, 확보한 평가 ID로 백엔드 취소 API를 호출합니다. 워커는 heartbeat로 취소를 감지해 실행을 중단합니다. 브라우저가 강제 종료되거나 오프라인이면 페이지 종료 시 취소 전달이 보장되지 않을 수 있습니다. 다른 화면에서 입력이 변경된 `409 preparation_stale` 응답은 희망 직무를 다시 저장하도록 안내합니다. 기존 `/job` 계약과 공고 카탈로그는 보존하되 새로운 희망 직무 보고서에 공고 연결 결과를 표시하지 않습니다.
+사전 분석 상태와 완료 확인은 `src/features/analysis/preparation-state.js`, API 호출·오류·화면 이탈 처리는 `preparation.js`에서 분리합니다. 최종 보고서의 요청·응답 검사는 `report-state.js`, 전체 화면 모달은 `report-loading.js`, 최소 표시 시간과 종료 모션 대기는 `preparation-transition.js`에서 담당합니다. 질문 준비 재시도는 완료한 단계를 건너뜁니다. 화면을 떠나면 브라우저 요청 대기와 자동 이동을 취소하며, 이미 서버에서 수행한 작업을 되돌린다는 의미는 아닙니다. 다른 화면에서 입력이 변경된 `409 preparation_stale` 응답은 희망 직무를 다시 저장하도록 안내합니다. 기존 `/job` 계약과 공고 카탈로그는 보존하되 새로운 희망 직무 보고서에 공고 연결 결과를 표시하지 않습니다.
 
 최종 답변 제출 후 배경을 220ms 동안 어둡게 하고 `/analysis` 요청과 눈 모션을 시작합니다. 눈 모션의 최소 표시 시간 4초는 프론트엔드 연출이며 최종 보고서 API 요청과 동시에 진행합니다. 서버 응답을 일부러 늦추지 않습니다. 응답까지 이미 4초 이상 걸렸으면 추가로 4초를 기다리지 않고 게이지 마무리와 짧은 종료 모션만 기다립니다. 홍채를 이루는 황금색 방사형 선의 개별 게이지와 패널은 시각적 진행 표시입니다. 각 선에 대응하는 서버 작업이나 세부 진행률 API가 있는 것은 아니며, 하나의 최종 `/analysis` 응답으로 완료를 확인합니다. 사전 분석의 `preparation.complete`를 최종 보고서 완료로 재사용하지 않습니다. 유효한 `/analysis` 응답 없이 타이머만으로 전체 완료나 결과 화면 이동을 허용하지 않습니다.
 
@@ -37,7 +68,6 @@ API 클라이언트와 TypeScript 타입 생성기도 아직 구현하지 않았
 클라이언트는 최종 보고서의 점수·문자열·주요 목록 구조를 확인한 뒤 워크스페이스를 갱신합니다. 갱신만 연결 오류로 실패하면 `/analysis`에서 받은 유효한 보고서와 제출 답변을 사용합니다. 갱신의 `401`·`403`·`409` 오류는 복구로 숨기지 않고 전달합니다. 그래픽 오류는 성공한 보고서를 무효화하지 않으며 남은 최소 표시 시간 이후 대체 전환을 사용합니다. 취소나 화면 이탈 후 도착한 응답·오류는 이전 페이지를 다시 열거나 다른 페이지에 분석 결과를 적용하지 않습니다. 제출 답변은 성공적으로 결과를 적용하기 전까지 편집 상태에 보존합니다.
 
 연결·쿠키·OAuth·HTTPS 구성은 [실행 안내](../../README.md)의 인증·쿠키·HTTPS 절을 따릅니다. 원본 DB나 개인 계정·설정은 계약 snapshot에 포함하지 않습니다. 해시 일치는 파일이 고정된 계약과 같은지를 검사할 뿐, 연결된 API가 실제로 구현되어 있거나 가동 중임을 보증하지 않습니다.
->>>>>>> Stashed changes
 
 ## 백엔드에서 프론트엔드로 전달하는 순서
 
@@ -51,7 +81,7 @@ API 클라이언트와 TypeScript 타입 생성기도 아직 구현하지 않았
 프론트엔드 저장소에서 실행하는 예시입니다. 버전과 입력 파일은 백엔드에서 전달한 실제 값으로 바꿉니다.
 
 ```powershell
-node scripts/sync-api-contract.mjs --source "C:\api-contracts\openapi-0.1.0.json" --version "0.1.0"
+node scripts/sync-api-contract.mjs --source "./openapi-1.7.1.json" --version "1.7.1"
 node scripts/sync-api-contract.mjs --check
 ```
 
@@ -80,3 +110,23 @@ HTTP(S) URL은 `--source`에 전달받은 버전별 명세 URL을 입력합니�
 타입·클라이언트 생성은 저장된 `openapi.json`을 입력으로 수행합니다. 다른 저장소 경로를 생성기의 입력으로 사용하지 않습니다.
 이후 `--check`, 전체 OpenAPI 검증, 타입 생성, 프론트엔드 타입 검사·테스트를 CI 절차에 추가합니다.
 자동 생성 결과를 커밋할지 빌드 중 생성할지도 그때 정하고, 생성 파일을 직접 수정하지 않도록 관리합니다.
+
+
+## 1.5.0 조건부 보완 예시
+
+보고서에 선택적인 `improvement_preview` 필드가 추가됩니다. `basis: conditional_rules`, 가정 적용 점수·기준·명시적 `assumptions`·`notice`를 제공합니다. 현재 평가와 같은 규칙을 적용할 수 없으면 null입니다. 기존 필드와 HTTP 동작은 유지합니다. 프론트엔드는 이를 붉은 예상 도형으로 표시하고 현재 점수와 구분합니다. 기존 저장 보고서를 조회할 때도 응답에 파생할 수 있으며 저장된 이력서·점수·근거를 덮어쓰지 않습니다.
+
+
+## 공고별 모의지원 · 1.6.0
+
+`GET /career-roles`는 비회원도 조회할 수 있습니다. `GET /job-postings?role_id=backend`는 DB 공고 직무명을 설정된 별칭으로 검색합니다. `role_id=custom`일 때는 `role` 문자열을 전달합니다. 이 목록은 이력서를 사용하지 않는 직무명 검색 결과이며 적합도 순위가 아닙니다.
+
+`POST /job-postings/{posting_id}/select`는 로그인·CSRF·저장된 이력서가 필요합니다. 서버가 접근 가능한 최신 DB 공고를 다시 조회하여 `company`, `role`, `job_text`, `selected_posting_id`를 저장합니다. 공고가 바뀌면 답변과 결과를 초기화하고 이력서와 희망 직무 선택은 유지합니다. 응답의 questions를 사용한 후 `/analysis`로 해당 공고의 보고서를 생성합니다. 기존 `/job`과 직무 참고 기준 분석 API는 이전 연동 호환을 위해 유지합니다.
+
+보고서 출력·다운로드 API는 제공하지 않습니다. 화면에서도 인쇄 버튼을 제거하고 인쇄 CSS에서 보고서를 숨깁니다. 브라우저 화면 캡처·개발자 도구·사용자의 별도 복사까지 차단하는 보안 기능은 아닙니다.
+
+## 비회원 분석과 결과 인증 · 1.7.1
+
+`/guest/resume/upload`, `/guest/career-target`, `/guest/job-postings/{posting_id}/select`, `/guest/analysis`는 비회원 임시 작업 전용입니다. 응답에는 본문·점수·보고서가 없고 첨부 여부·공고 메타데이터·질문·완료 여부·만료 시각만 있습니다. `GET /guest/workspace`의 `expired`는 만료된 세션을 구분합니다. 인증된 `POST /guest/claim`만 완료한 보고서를 현재 계정 작업 공간으로 연결합니다. `DELETE /guest/workspace`는 즉시 파기합니다. CSRF와 세션별 접근 제어는 비회원 요청에도 적용됩니다.
+
+회원 API의 인증 요구사항은 유지합니다. 자세한 사용자 흐름과 삭제 조건은 `docs/product/implemented-flow.md`를 참조하세요.

@@ -56,13 +56,51 @@ export function radarDisplayLabel(label) {
   return labels.get(label) ?? label;
 }
 
-/** Four independent values are presentation-only and never read the legacy aggregate. */
+const BACKEND_AXES = [
+  ['resume_completeness', 'resume_completeness', '이력서 완성도'],
+  ['job_fit', 'job_fit', '직무 적합도'],
+  ['eligibility', 'qualifications', '지원 자격 충족도'],
+  ['practical_competitiveness', 'practical_competitiveness', '실무 경쟁력'],
+];
+
+export function isDemoScoreReport(report) {
+  return report?.demo === true && report.source !== 'backend';
+}
+
+/** The server owns scoring. Missing values never become zero, averages or demo scores. */
 export function pyramidAxes(report) {
-  return demoScoreModel(report).axes;
+  if (isDemoScoreReport(report)) return demoScoreModel(report).axes;
+  const backend = report?.source === 'backend';
+  return BACKEND_AXES.map(([id, key, label], index) => {
+    const component = report?.score_components?.[key];
+    const value = backend
+      ? component && Object.hasOwn(component, 'score')
+        ? component.score
+        : report?.backend_result?.[key]
+      : null;
+    const score =
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100
+        ? value
+        : null;
+    return {
+      id,
+      index,
+      key,
+      label,
+      score,
+      normalized: score,
+      maximum: 100,
+      source: backend ? 'backend' : 'unavailable',
+      subcriteria:
+        backend && Array.isArray(report.backend_criteria)
+          ? report.backend_criteria.filter((item) => item?.evaluation_criteria?.domain_code === key)
+          : [],
+    };
+  });
 }
 
 export function pyramidPreview(report) {
-  return demoScoreModel(report).preview;
+  return isDemoScoreReport(report) ? demoScoreModel(report).preview : null;
 }
 export function pyramidTransition(from, to, progress) {
   const t = Math.max(0, Math.min(1, progress));

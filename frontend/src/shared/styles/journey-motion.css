@@ -1,0 +1,81 @@
+/* Shared viewport geometry with the analysis eye. It never follows document scrolling. */
+.journey-motion {
+  position: fixed;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.journey-motion canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Page content paints above the fixed decoration; only surface fills are translucent. */
+body:has(.journey-motion) :is(.topbar, .steps, #main, #notices, .footer) {
+  position: relative;
+  z-index: 1;
+}
+
+body:has(.journey-motion) :is(.topbar, .steps) {
+  background: var(--paper);
+}
+
+/* A feathered veil follows the foreground glyphs, softening only artwork behind text.
+   It inherits into wrapped text and fields, and scrolls with them without canvas DOM reads. */
+body:has(.journey-motion) #main {
+  text-shadow:
+    0 0 1px #fff,
+    0 0 3px #fff,
+    0 0 6px rgb(255 255 255 / 82%);
+}
+
+body:has(.journey-motion) #main :is(button, .button) {
+  text-shadow: none;
+}
+
+body:has(.journey-motion) #main :is(textarea, select, input) {
+  text-shadow: inherit;
+}
+
+body:has(.journey-motion) #main input::file-selector-button {
+  text-shadow: none;
+}
+
+body:has(.journey-motion)
+  :is(
+    textarea,
+    input:not([type='file']):not([type='hidden']),
+    select,
+    .job-card,
+    .posting-section,
+    .opportunities__detail
+  ) {
+  background-color: rgb(255 255 255 / 80%);
+}
+
+body:has(.journey-motion) .opportunities {
+  background: transparent;
+}
+
+body:has(.journey-motion)
+  :is(.opportunities__sidebar, .opportunities__pagination, .posting-editor-preview) {
+  background-color: rgb(244 247 252 / 80%);
+}
+
+body:has(.journey-motion) :is(.guide-panel, .resume-examples, .selected-posting-banner) {
+  background-color: rgb(237 243 255 / 80%);
+}
+
+body:has(.journey-motion) .upload-area {
+  background-color: rgb(248 250 255 / 80%);
+}
+
+@media print {
+  .journey-motion {
+    display: none;
+  }
+}

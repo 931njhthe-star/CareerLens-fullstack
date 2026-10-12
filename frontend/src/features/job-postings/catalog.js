@@ -1,7 +1,8 @@
 import { api } from '../../shared/api/client.js';
+import { publicErrorMessage } from '../../shared/api/error-messages.js';
 import { notice, pending, bindCounters } from '../../shared/components/ui.js';
 import { jobListPage, jobDetailPage, postingEditorPage, jobsError } from '../../pages/jobs.js';
-import { catalogQuery, postingPayload } from './catalog-state.js';
+import { catalogPath, catalogQuery, postingPayload } from './catalog-state.js';
 
 const drafts = new Map();
 let activeRequest;
@@ -20,7 +21,6 @@ export async function bindCatalog({
   route,
   user,
   navigate,
-  requireLogin,
   onSelect,
   onError,
   rerender,
@@ -31,8 +31,9 @@ export async function bindCatalog({
   const target = document.getElementById('main');
   const current = () => !controller.signal.aborted && target === document.getElementById('main');
   const read = (path) => api(path, { signal: controller.signal });
-  if (['new', 'edit'].includes(route.kind) && !user) {
-    requireLogin(location.hash.slice(2));
+  const canWrite = user?.demo === true;
+  if (['new', 'edit'].includes(route.kind) && !canWrite) {
+    target.innerHTML = postingEditorPage({}, route.id, route.query, user);
     return;
   }
   let posting;
@@ -41,11 +42,10 @@ export async function bindCatalog({
   try {
     if (route.kind === 'list') {
       query = catalogQuery(route.query);
-      if (query.get('saved') === '1' && !user) {
-        requireLogin(`jobs?${query}`);
-        return;
-      }
-      list = await read(`/job-postings?${query}`);
+      if (!canWrite) query.delete('saved');
+      const filters = new URLSearchParams(query);
+      filters.delete('return_to');
+      list = await read(`/job-postings?${filters}`);
       if (!current()) return;
       // A deletion or changed dataset can make the last page empty.
       if (!list.items.length && list.page > 1) {
@@ -57,14 +57,19 @@ export async function bindCatalog({
     } else {
       if (route.id) posting = (await read(`/job-postings/${encodeURIComponent(route.id)}`)).posting;
       if (!current()) return;
-      if (route.kind === 'detail') target.innerHTML = jobDetailPage(posting, user);
+      if (route.kind === 'detail') target.innerHTML = jobDetailPage(posting, user, route.query);
       else {
         if (route.kind === 'edit' && !['manual', 'mock'].includes(posting.source_type))
           throw new Error(
             '가상 예시는 수정할 수 없습니다. 공고 직접 입력에서 내 공고를 만들어 주세요.',
           );
         const key = route.id || 'new';
-        target.innerHTML = postingEditorPage(drafts.get(key)?.value || posting, route.id);
+        target.innerHTML = postingEditorPage(
+          drafts.get(key)?.value || posting,
+          route.id,
+          route.query,
+          user,
+        );
       }
     }
   } catch (error) {
@@ -73,21 +78,20 @@ export async function bindCatalog({
       await onError(error);
       return;
     }
-    target.innerHTML = jobsError(error.message);
+    target.innerHTML = jobsError(publicErrorMessage(error), route.query);
     document.getElementById('retry-jobs')?.addEventListener('click', rerender);
     return;
   }
   bindCounters(target);
   document.getElementById('catalog-search')?.addEventListener('submit', (event) => {
     event.preventDefault();
-    navigate(`jobs?${catalogQuery(new FormData(event.currentTarget))}`);
+    const next = catalogQuery(new FormData(event.currentTarget));
+    if (query.has('return_to')) next.set('return_to', query.get('return_to'));
+    navigate(`jobs?${next}`);
   });
   target.querySelectorAll('[data-bookmark]').forEach((button) =>
     button.addEventListener('click', async () => {
-      if (!user) {
-        requireLogin(location.hash.slice(2));
-        return;
-      }
+      if (!canWrite) return;
       button.disabled = true;
       const selected = posting || list.items.find((item) => item.id === button.dataset.bookmark);
       try {
@@ -101,14 +105,16 @@ export async function bindCatalog({
           rerender();
           return;
         }
-        button.textContent = selected.is_saved ? '저장됨' : '관심 공고 저장';
+        button.textContent = selected.is_saved ? '시연 저장됨' : '관심 공고 저장';
         button.setAttribute('aria-pressed', String(selected.is_saved));
         button.setAttribute(
           'aria-label',
           `${selected.role} ${selected.is_saved ? '저장 해제' : '저장'}`,
         );
         notice(
-          selected.is_saved ? '관심 공고에 저장했습니다.' : '관심 공고에서 해제했습니다.',
+          selected.is_saved
+            ? '이 탭의 시연 관심 공고에 저장했습니다.'
+            : '이 탭의 시연 관심 공고에서 해제했습니다.',
           'success',
         );
       } catch (error) {
@@ -131,6 +137,7 @@ export async function bindCatalog({
     }
   });
   document.getElementById('delete-posting')?.addEventListener('click', async (event) => {
+    if (!canWrite) return;
     if (
       !window.confirm(
         '직접 입력한 이 공고와 저장 표시를 삭제할까요? 이미 모의지원에 복사한 내용은 유지됩니다.',
@@ -141,7 +148,7 @@ export async function bindCatalog({
     try {
       await api(`/job-postings/${encodeURIComponent(posting.id)}`, { method: 'DELETE' });
       drafts.delete(posting.id);
-      if (current()) navigate('jobs');
+      if (current()) navigate(catalogPath('jobs', route.query));
     } catch (error) {
       event.target.disabled = false;
       if (current()) await onError(error);
@@ -153,6 +160,7 @@ export async function bindCatalog({
   );
   form?.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (!canWrite) return;
     pending(form, '저장하는 중…', async () => {
       try {
         const payload = postingPayload(new FormData(form));
@@ -163,7 +171,8 @@ export async function bindCatalog({
           { method: route.id ? 'PUT' : 'POST', body: payload },
         );
         drafts.delete(route.id || 'new');
-        if (current()) navigate(`jobs/${encodeURIComponent(result.posting.id)}`);
+        if (current())
+          navigate(catalogPath(`jobs/${encodeURIComponent(result.posting.id)}`, route.query));
       } catch (error) {
         if (current()) await onError(error);
       }

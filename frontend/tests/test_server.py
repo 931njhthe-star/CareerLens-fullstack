@@ -2,6 +2,7 @@
 
 from email.message import Message
 from pathlib import Path
+from io import BytesIO
 import json
 import os
 import tempfile
@@ -51,57 +52,6 @@ class ServerTests(unittest.TestCase):
             patch("server.build_opener", return_value=opener or Opener()),
         ):
             return server.create_app(origin)
-
-    def test_vercel_entrypoint_exports_the_existing_flask_app(self):
-        response = server.app.test_client().get("/")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.mimetype, "text/html")
-
-    def test_local_career_markdown_endpoint_returns_the_original_utf8_files(self):
-        with tempfile.TemporaryDirectory() as directory:
-            Path(directory, "001.md").write_text(
-                "# Posting\n"
-                "- **회사명:** 예시 회사\n"
-                "- **공고명:** 예시 직무 채용\n"
-                "- **직무명:** 예시 직무\n"
-                "- **근무지:** 서울\n"
-                "- **고용형태:** 정규직\n"
-                "- **경력:** 신입\n"
-                "- **직무 소개:** 한글 직무 소개\n"
-                "### 3. 담당업무\n- 업무 설명\n"
-                "### 4. 자격요건\n- 자격 설명\n"
-                "### 5. 우대사항\n- 우대 설명\n",
-                encoding="utf-8",
-            )
-            Path(directory, "002.md").write_text(
-                "- **회사명:** 다른 회사\n"
-                "- **공고명:** 예시 직무 채용 2\n"
-                "- **직무명:** 예시 직무\n",
-                encoding="utf-8",
-            )
-            with patch.dict(
-                os.environ, {"CAREERLENS_JOB_POSTINGS_DIR": directory}, clear=True
-            ):
-                response = self.app().test_client().get("/api/v1/local-data/career-markdown")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json["items"]), 2)
-        self.assertEqual(response.json["items"][0]["id"], "001")
-        self.assertEqual(response.json["items"][0]["filename"], "001.md")
-        self.assertIn("- **직무명:** 예시 직무", response.json["items"][0]["content"])
-        self.assertIn("### 5. 우대사항", response.json["items"][0]["content"])
-        self.assertNotIn("roles", response.json)
-
-    def test_local_career_markdown_reports_missing_source(self):
-        with tempfile.TemporaryDirectory() as directory:
-            missing = Path(directory, "missing")
-            with patch.dict(
-                os.environ, {"CAREERLENS_JOB_POSTINGS_DIR": str(missing)}, clear=True
-            ):
-                response = self.app().test_client().get("/api/v1/local-data/career-markdown")
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json["error"]["code"], "career_markdown_unavailable")
 
     def test_origin_validation(self):
         for value in (
@@ -153,11 +103,7 @@ class ServerTests(unittest.TestCase):
             response = client.post(
                 "/api/v1/auth/login?case=1",
                 json={"email": "student@example.com"},
-                headers={
-                    "Origin": "http://localhost",
-                    "X-CSRF-Token": "test-csrf",
-                    "Authorization": "Bearer test-token",
-                },
+                headers={"Origin": "http://localhost", "X-CSRF-Token": "test-csrf"},
             )
         self.assertEqual(response.status_code, 200)
         request, timeout = opener.calls[0]
@@ -167,10 +113,166 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("host", headers)
         self.assertEqual(headers["origin"], "http://localhost")
         self.assertEqual(headers["x-csrf-token"], "test-csrf")
-        self.assertEqual(headers["authorization"], "Bearer test-token")
         self.assertIn("careerlens_session=test-session", headers["cookie"])
         self.assertEqual(json.loads(request.data), {"email": "student@example.com"})
         self.assertEqual(timeout, 60)
+
+    def test_proxy_preserves_backend_auth_idempotency_and_event_cursor(self):
+        opener = Opener()
+        response = self.app("http://127.0.0.1:5301", opener).test_client().post(
+            "/api/v1/evaluations",
+            json={"resume_id": "synthetic-resume", "job_posting_id": "synthetic-job"},
+            headers={"Authorization": "Bearer synthetic-token", "Idempotency-Key": "synthetic-run", "Last-Event-ID": "12", "X-Untrusted": "drop"},
+        )
+        self.assertEqual(response.status_code, 200)
+        headers = {key.lower(): value for key, value in opener.calls[0][0].header_items()}
+        self.assertEqual(headers["authorization"], "Bearer synthetic-token")
+        self.assertEqual(headers["idempotency-key"], "synthetic-run")
+        self.assertEqual(headers["last-event-id"], "12")
+        self.assertNotIn("x-untrusted", headers)
+
+    def test_local_catalog_reads_only_numbered_top_level_markdown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("010.md", "002.md", "README.md", "00_목록.md", "001.txt"):
+                (root / name).write_text("가상 공고 " + name, encoding="utf-8-sig")
+            (root / "nested").mkdir()
+            (root / "nested" / "003.md").write_text("excluded", encoding="utf-8")
+            opener = Opener(error=AssertionError("Local catalog must not contact API"))
+            app = self.app("http://127.0.0.1:5301", opener)
+            with patch.dict(os.environ, {"CAREERLENS_JOB_POSTINGS_DIR": directory}):
+                response = app.test_client().get("/api/v1/local-data/career-markdown?path=ignored")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual([item["id"] for item in response.json["items"]], ["002", "010"])
+            self.assertEqual(response.json["items"][0]["content"], "가상 공고 002.md")
+            self.assertEqual(opener.calls, [])
+
+    def test_local_catalog_fails_without_exposing_local_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("server.career_postings_directory", return_value=Path(directory)):
+                response = self.app().test_client().get("/api/v1/local-data/career-markdown")
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.json["error"]["code"], "career_markdown_unavailable")
+            self.assertNotIn(directory, response.get_data(as_text=True))
+
+    def test_local_catalog_attaches_source_taxonomy_by_matching_number_and_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for filename in ("003.md", "008.md", "009.md"):
+                (root / filename).write_text("공고 " + filename, encoding="utf-8")
+            (root / "00_목록.md").write_text(
+                "# 원본 직무 분류\n"
+                "| 번호 | 회사 | 직무 유형 | 파일 |\n"
+                "|---:|---|---|---|\n"
+                "| 003 | A | 플랫폼·서빙 | [003.md](003.md) |\n"
+                "| 008 | B | 플랫폼·서빙 | [008.md](008.md) |\n"
+                "| 009 | C | RAG·데이터 | [009.md](009.md) |\n",
+                encoding="utf-8-sig",
+            )
+            result = server.load_career_markdown(root)
+            self.assertEqual(len(result["items"]), 3)
+            self.assertEqual(
+                [(item["filename"], item["role_category"]) for item in result["items"]],
+                [("003.md", "플랫폼·서빙"), ("008.md", "플랫폼·서빙"), ("009.md", "RAG·데이터")],
+            )
+            self.assertEqual(result["items"][1]["content"], "공고 008.md")
+
+    def test_local_catalog_keeps_legacy_items_when_source_index_is_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "008.md").write_text("공고", encoding="utf-8")
+            self.assertEqual(
+                server.load_career_markdown(root),
+                {"items": [{"id": "008", "filename": "008.md", "content": "공고"}]},
+            )
+
+    def test_local_catalog_ignores_malformed_or_mismatched_taxonomy_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for filename in ("008.md", "009.md"):
+                (root / filename).write_text("공고", encoding="utf-8")
+            (root / "00_목록.md").write_text(
+                "| 번호 | 직무 유형 | 파일 |\n"
+                "|---|---|---|\n"
+                "| 008 | 잘못 연결된 분류 | [008.md](009.md) |\n"
+                "| 008 | 외부 파일 | [008.md](../008.md) |\n"
+                "| 008 | 외부 URL | [008.md](https://example.com/008.md) |\n"
+                "| 008 | | [008.md](008.md) |\n"
+                "| 잘못된 번호 | 분류 | [008.md](008.md) |\n"
+                "| 008 | 빠진 링크 |\n"
+                "| 009 | RAG·데이터 | [009.md](009.md) |\n",
+                encoding="utf-8",
+            )
+            items = server.load_career_markdown(root)["items"]
+            self.assertNotIn("role_category", items[0])
+            self.assertEqual(items[1]["role_category"], "RAG·데이터")
+
+    def test_resume_conversion_handles_markdown_and_legacy_korean_text_without_upstream(self):
+        opener = Opener(error=AssertionError("Conversion must not contact API"))
+        app = self.app("http://127.0.0.1:5301", opener)
+        for filename, content in (
+            ("resume.md", "# 가상 이력서\r\n테스트 경력".encode("utf-8-sig")),
+            ("C:\\uploads\\이력서.TXT", "가상 이력서\r\n테스트 경력".encode("cp949")),
+        ):
+            with self.subTest(filename=filename):
+                response = app.test_client().post("/api/v1/local-data/convert-resume", data={"file": (BytesIO(content), filename)})
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.json["filename"].endswith(".md"))
+                self.assertNotIn("\\", response.json["filename"])
+                self.assertIn("가상 이력서\n테스트 경력", response.json["text"])
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(opener.calls, [])
+
+    def test_resume_conversion_extracts_docx_paragraphs_and_tables_in_order(self):
+        from docx import Document
+        document = Document()
+        document.add_paragraph("가상 이력서")
+        table = document.add_table(rows=1, cols=2)
+        table.cell(0, 0).text = "분석"
+        table.cell(0, 1).text = "테스트 경력"
+        document.add_paragraph("마지막")
+        content = BytesIO()
+        document.save(content)
+        content.seek(0)
+        response = self.app().test_client().post("/api/v1/local-data/convert-resume", data={"file": (content, "synthetic.docx")})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, {"filename": "synthetic.md", "text": "가상 이력서\n분석\t테스트 경력\n마지막"})
+
+    def test_resume_conversion_extracts_pdf_text(self):
+        from pypdf import PdfWriter
+        from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=400, height=200)
+        font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})})
+        content = DecodedStreamObject()
+        content.set_data(b"BT /F1 12 Tf 20 100 Td (Synthetic resume experience) Tj ET")
+        page[NameObject("/Contents")] = writer._add_object(content)
+        uploaded = BytesIO()
+        writer.write(uploaded)
+        uploaded.seek(0)
+        response = self.app().test_client().post("/api/v1/local-data/convert-resume", data={"file": (uploaded, "synthetic.pdf")})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Synthetic resume experience", response.json["text"])
+
+    def test_resume_conversion_rejects_missing_unsupported_empty_and_disguised_binary(self):
+        client = self.app().test_client()
+        response = client.post("/api/v1/local-data/convert-resume")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json["error"]["code"], "file_required")
+        for filename, data, status in (("test.exe", b"MZexample", 415), ("empty.md", b"", 400), ("fake.txt", b"%PDF-1.7", 400), ("fake.docx", b"not a docx", 400), ("bad.md", b"text\x00data", 400)):
+            with self.subTest(filename=filename):
+                response = client.post("/api/v1/local-data/convert-resume", data={"file": (BytesIO(data), filename)})
+                self.assertEqual(response.status_code, status)
+                self.assertIn("message", response.json["error"])
+
+    def test_resume_conversion_enforces_file_limit_before_parsing(self):
+        with patch("server.extract_resume", side_effect=AssertionError("Oversized data must not reach parser")):
+            response = self.app().test_client().post("/api/v1/local-data/convert-resume", data={"file": (BytesIO(b"x" * (server.MAX_UPLOAD_BYTES + 1)), "large.txt")})
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json["error"]["code"], "file_too_large")
+        response.request.input_stream.close()
+        response.close()
 
     def test_cookie_domain_removed_security_attributes_and_multiple_headers_preserved(self):
         upstream = UpstreamResponse(

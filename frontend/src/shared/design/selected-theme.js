@@ -8,6 +8,10 @@ export const selectedDesign = Object.freeze({
   effect: 'orbit',
 });
 
+// Legacy/lab gauge selection; production uses the shared fixed-position v8 painter.
+// Both legacy renderers are retained in the checked-in matching-eye bundle.
+export const analysisEyeGauge = 'radial';
+
 export const analysisEyePalette = Object.freeze({
   fiber: '#2056bf',
   highlight: '#9ad6ff',

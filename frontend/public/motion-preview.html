@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1" />
+    <meta
+      name="theme-color"
+      content="#f5f8ff" />
+    <title>CareerLens · 하나의 빛에서 눈으로</title>
+    <link
+      rel="icon"
+      href="/favicon.svg"
+      type="image/svg+xml" />
+    <link
+      rel="stylesheet"
+      href="/src/shared/styles/main.css" />
+    <link
+      rel="stylesheet"
+      href="/src/shared/styles/motion-preview.css" />
+    <script
+      type="module"
+      src="/src/features/analysis/motion-preview.js"></script>
+  </head>
+  <body class="motion-preview-page">
+    <main
+      class="motion-preview"
+      id="main"
+      tabindex="-1">
+      <header class="motion-preview__header">
+        <a
+          class="motion-preview__brand"
+          href="#main"
+          aria-label="CareerLens 모션 시안 처음으로"
+          >Career<span>Lens</span></a
+        >
+        <span class="motion-preview__review-label">수정 방향 미리보기</span>
+      </header>
+      <section
+        class="motion-preview__intro"
+        aria-labelledby="preview-title">
+        <div>
+          <h1 id="preview-title"
+            >같은 자리, 같은 크기.<br class="motion-preview__mobile-break" />
+            원이 그대로 동공으로.</h1
+          >
+          <p
+            >아래로 스크롤해도 위의 빛과 원은 화면의 같은 자리에 남습니다. 어느 위치에서 결과를
+            확인하든 원이 이동하지 않고, 그대로 분석하는 눈의 동공으로 이어집니다.</p
+          >
+        </div>
+        <a
+          class="motion-preview__jump"
+          href="#storyboard"
+          >8개 장면 자세히 보기 <span aria-hidden="true">↓</span></a
+        >
+      </section>
+      <section
+        class="motion-preview__player"
+        aria-label="고정된 동공으로 이어지는 과정 모션">
+        <ol
+          class="motion-preview__workflow"
+          aria-label="사이트 진행 단계">
+          <li
+            class="is-active"
+            data-workflow="0"
+            ><span class="motion-preview__step-number">1</span><span>이력서</span></li
+          >
+          <li data-workflow="1"
+            ><span class="motion-preview__step-number">2</span><span>희망 직무</span></li
+          >
+          <li data-workflow="2"
+            ><span class="motion-preview__step-number">3</span><span>채용공고</span></li
+          >
+          <li data-workflow="3"
+            ><span class="motion-preview__step-number">4</span><span>모의지원</span></li
+          >
+        </ol>
+        <div
+          class="motion-preview__viewport"
+          aria-label="화면에 고정된 모션 관찰 영역">
+          <div
+            class="motion-preview__scene"
+            id="preview-scene">
+            <canvas
+              id="motion-study"
+              width="1200"
+              height="620"
+              role="img"
+              aria-label="푸른 점에서 곡선과 요소, 회전하는 원, 방사형 눈으로 이어지는 모션"
+              aria-describedby="stage-description"></canvas>
+            <h2
+              class="motion-preview__scene-title"
+              id="scene-title"
+              >지원의 시작은, 내 이력서부터.</h2
+            >
+            <span
+              class="motion-preview__scene-tag"
+              id="scene-tag"
+              >이력서 첨부 전</span
+            >
+          </div>
+          <p class="motion-preview__anchor-note"
+            >스크롤해도 같은 자리 · 아래 내용을 내리며 확인해 보세요</p
+          >
+        </div>
+        <div class="motion-preview__transport">
+          <label
+            class="motion-preview__timeline-label"
+            for="motion-timeline"
+            >진행 장면<span class="motion-preview__sr-only">을 선택하세요</span></label
+          >
+          <input
+            id="motion-timeline"
+            class="motion-preview__timeline"
+            type="range"
+            min="0"
+            max="18"
+            step="0.01"
+            value="0"
+            aria-label="모션 재생 위치" />
+          <div class="motion-preview__options">
+            <label class="motion-preview__guide"
+              ><input
+                type="checkbox"
+                id="show-guides" /><span>중심·크기 기준선</span></label
+            >
+            <button
+              type="button"
+              class="motion-preview__quiet"
+              id="shuffle-elements"
+              >요소 다시 선택</button
+            >
+          </div>
+        </div>
+      </section>
+      <div
+        class="motion-preview__steps"
+        id="stage-buttons"
+        role="group"
+        aria-label="모션 장면 선택"></div>
+      <div
+        class="motion-preview__caption"
+        aria-live="polite"
+        aria-atomic="true">
+        <p
+          class="motion-preview__caption-index"
+          id="stage-index"
+          >01 / 08</p
+        >
+        <div
+          ><h2 id="stage-title">푸른 빛의 시작</h2
+          ><p id="stage-description">제목 아래에 작은 푸른 빛이 켜집니다.</p></div
+        >
+      </div>
+      <section
+        class="motion-preview__storyboard"
+        id="storyboard"
+        aria-labelledby="storyboard-title">
+        <header class="motion-preview__section-header">
+          <div><h2 id="storyboard-title">이어지는 8개의 장면</h2></div>
+          <p>장면을 크게 보거나, PNG 이미지로 저장해 비교할 수 있어요.</p>
+        </header>
+        <div
+          class="motion-preview__frames"
+          id="storyboard-frames"></div>
+      </section>
+      <aside
+        class="motion-preview__note"
+        aria-label="미리보기 안내">
+        <span aria-hidden="true">i</span>
+        <p
+          >이번 수정 방향을 확인하는 모션 시안입니다. 요소는 평가 항목에서 최대 5개를 골라 보여주며,
+          눈의 방사형 변화는 시연용 진행 표현입니다. 실제 이력서나 분석 요청은 사용하지 않습니다.</p
+        >
+      </aside>
+      <p
+        class="motion-preview__sr-only"
+        id="preview-status"
+        role="status"></p>
+      <footer class="motion-preview__footer"
+        ><span>CareerLens</span><p>빛과 곡선의 흐름, 그리고 같은 자리에 남는 하나의 원.</p></footer
+      >
+      <div
+        class="motion-preview__dock"
+        aria-label="고정된 모션 재생 제어">
+        <div class="motion-preview__dock-inner">
+          <div class="motion-preview__playback">
+            <button
+              type="button"
+              class="motion-preview__play"
+              id="play-motion"
+              aria-label="전체 모션 재생"
+              >재생</button
+            >
+            <button
+              type="button"
+              id="restart-motion"
+              aria-label="모션 처음부터 다시 재생"
+              >처음부터</button
+            >
+            <output
+              id="motion-clock"
+              for="motion-timeline"
+              >00.0 / 18.0</output
+            >
+          </div>
+          <button
+            type="button"
+            class="motion-preview__analysis"
+            id="preview-analysis"
+            >모의지원 결과 확인 <span aria-hidden="true">↗</span></button
+          >
+        </div>
+      </div>
+    </main>
+    <noscript>이 모션 미리보기는 JavaScript가 필요합니다.</noscript>
+  </body>
+</html>

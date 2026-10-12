@@ -46,12 +46,18 @@ function isObject(value) {
 }
 
 function validateContract(document) {
-  if (!isObject(document) || typeof document.openapi !== 'string'
-    || !/^3\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(document.openapi)) {
+  if (
+    !isObject(document) ||
+    typeof document.openapi !== 'string' ||
+    !/^3\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(document.openapi)
+  ) {
     throw new Error('The contract must be an OpenAPI 3.x JSON object.');
   }
-  if (!isObject(document.info) || typeof document.info.version !== 'string'
-    || document.info.version.trim().length === 0) {
+  if (
+    !isObject(document.info) ||
+    typeof document.info.version !== 'string' ||
+    document.info.version.trim().length === 0
+  ) {
     throw new Error('The contract must contain a nonempty info.version string.');
   }
   if (!isObject(document.paths)) throw new Error('The contract must contain a paths object.');
@@ -75,8 +81,9 @@ async function readSource(source) {
 }
 
 async function readOptional(path) {
-  try { return await readFile(path); }
-  catch (error) {
+  try {
+    return await readFile(path);
+  } catch (error) {
     if (error.code === 'ENOENT') return null;
     throw error;
   }
@@ -106,8 +113,9 @@ async function replacePair(snapshot, lock) {
     }
     throw error;
   } finally {
-    await Promise.all([stagedSnapshot, stagedLock, rollbackSnapshot]
-      .map((path) => rm(path, { force: true })));
+    await Promise.all(
+      [stagedSnapshot, stagedLock, rollbackSnapshot].map((path) => rm(path, { force: true })),
+    );
   }
 }
 
@@ -115,10 +123,16 @@ async function checkSnapshot() {
   const bytes = await readFile(snapshotPath);
   const document = validateContract(JSON.parse(bytes.toString('utf8')));
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));
-  if (!isObject(lock) || lock.version !== document.info.version
-    || typeof lock.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(lock.sha256)
-    || lock.sha256 !== checksum(bytes)) {
-    throw new Error('Snapshot and contract-lock.json do not match. Sync the approved contract again.');
+  if (
+    !isObject(lock) ||
+    lock.version !== document.info.version ||
+    typeof lock.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(lock.sha256) ||
+    lock.sha256 !== checksum(bytes)
+  ) {
+    throw new Error(
+      'Snapshot and contract-lock.json do not match. Sync the approved contract again.',
+    );
   }
   console.log(`API contract verified: ${lock.version} (${lock.sha256})`);
 }
@@ -129,10 +143,16 @@ async function main() {
   if (options.check) return checkSnapshot();
   const document = validateContract(JSON.parse(await readSource(options.source)));
   if (document.info.version !== options.version) {
-    throw new Error(`Version mismatch: requested ${options.version}, received ${document.info.version}`);
+    throw new Error(
+      `Version mismatch: requested ${options.version}, received ${document.info.version}`,
+    );
   }
   const snapshot = `${JSON.stringify(document, null, 2)}\n`;
-  const lock = `${JSON.stringify({ version: options.version, sha256: checksum(snapshot) }, null, 2)}\n`;
+  const lock = `${JSON.stringify(
+    { version: options.version, sha256: checksum(snapshot) },
+    null,
+    2,
+  )}\n`;
   await replacePair(snapshot, lock);
   console.log(`API contract synchronized: ${options.version}`);
   console.log(`Snapshot: ${snapshotPath}`);

@@ -10,15 +10,16 @@ export function resumeEditor(draft) {
         class="upload-area">
         <div class="upload-icon">${icon('upload', 26)}</div>
         <h2 id="resume-heading">이력서 파일 불러오기</h2>
-        <p id="file-hint">Markdown, TXT · 최대 10MB</p>
+        <p id="file-hint">Markdown(.md)만 첨부 가능 · UTF-8 텍스트 · 최대 10MB</p>
+        <p class="input-hint">경력·프로젝트·기술·학력을 텍스트로 작성해 .md로 저장해 주세요. 업로드 전에 파일 형식과 크기, 본문을 확인합니다.</p>
         <div class="file-controls">
           <input
             id="resume-file"
             name="file"
             type="file"
-            accept=".md,.txt"
+            accept=".md"
             required
-            aria-label="이력서 파일 선택"
+            aria-label="Markdown 이력서 파일 선택"
             aria-describedby="file-hint" />
           <button
             type="submit"
@@ -56,11 +57,11 @@ export function resumeEditor(draft) {
           <span id="resume-count"></span>
         </div>
         <div class="form-actions">
-          <span class="quiet">다음 단계에서 희망 직무를 선택합니다.</span>
+          <span class="quiet">채용공고 단계에서 희망 직무를 고른 뒤 공고를 선택합니다.</span>
           <button
             class="button primary workflow-next"
             type="submit">
-            희망 직무 선택 ${icon('arrow', 18)}
+            채용공고로 계속 ${icon('arrow', 18)}
           </button>
         </div>
       </form>

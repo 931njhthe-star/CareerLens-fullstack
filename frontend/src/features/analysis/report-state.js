@@ -41,12 +41,10 @@ function validReport(report) {
   const text = (value) => typeof value === 'string';
   if (
     !record(report) ||
-    !(
-      report.source === 'backend'
-        ? report.score === null ||
-          (Number.isFinite(report.score) && report.score >= 0 && report.score <= 100)
-        : Number.isFinite(report.score) && report.score >= 0 && report.score <= 100
-    ) ||
+    !(report.source === 'backend'
+      ? report.score === null ||
+        (Number.isFinite(report.score) && report.score >= 0 && report.score <= 100)
+      : Number.isFinite(report.score) && report.score >= 0 && report.score <= 100) ||
     !text(report.summary) ||
     !text(report.verdict)
   )

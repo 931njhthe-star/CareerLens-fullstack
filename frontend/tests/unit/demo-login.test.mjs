@@ -17,16 +17,17 @@ beforeEach(() => {
   globalThis.sessionStorage = createStorage();
 });
 
-test('email login page offers an explicitly offline demo account', () => {
+test('production email login keeps the real account form without a demo shortcut', () => {
   const html = renderAuth('email', { providers: [] });
-  assert.match(html, /data-demo-login/);
-  assert.match(html, /시연용 계정으로 로그인/);
-  assert.match(html, /백엔드 인증 없이/);
+  assert.doesNotMatch(html, /data-demo-login/);
+  assert.match(html, /data-action="login"/);
 });
 
 test('demo login keeps resume and mock analysis in this tab without backend requests', async () => {
   const previousFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (url) => {
+    if (url === '/api/v1/local-data/career-markdown')
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
     assert.fail('Demo account must not send requests to the backend');
   };
   try {

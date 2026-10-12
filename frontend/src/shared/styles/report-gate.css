@@ -19,6 +19,10 @@
   overflow-wrap: anywhere;
 }
 .report-gate {
+  --auth-accent: #2056bf;
+  --auth-accent-hover: #18469f;
+  --green: #2056bf;
+  --green-dark: #18469f;
   position: fixed;
   inset: 0;
   z-index: 1100;
@@ -28,19 +32,24 @@
 .report-gate__skeleton {
   width: min(100% - 64px, 1120px);
   margin: 7vh auto;
+  filter: blur(14px);
+  user-select: none;
+  pointer-events: none;
+}
+.report-gate__paper {
+  position: relative;
   padding: 48px;
   background: var(--paper);
   min-height: 86vh;
-  filter: blur(12px);
-  user-select: none;
-  pointer-events: none;
+  border-radius: 16px;
+  overflow: hidden;
 }
 .report-gate__skeleton-heading,
 .report-gate__skeleton-line,
 .report-gate__skeleton-copy span,
 .report-gate__skeleton-block {
   display: block;
-  background: var(--line);
+  background: #aebed4;
   border-radius: 4px;
 }
 .report-gate__skeleton-heading {
@@ -60,6 +69,21 @@
 }
 .report-gate__skeleton-block {
   height: 190px;
+}
+.report-gate__empty-graphic {
+  min-height: 220px;
+  background: #edf5ff;
+}
+.report-gate__empty-graphic svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.report-gate__pyramid-outline {
+  fill: none;
+  stroke: #668abb;
+  stroke-width: 2;
+  stroke-linejoin: round;
 }
 .report-gate__skeleton-copy {
   display: grid;
@@ -84,23 +108,34 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 32px 20px;
-  background: rgb(13 30 55 / 78%);
-  backdrop-filter: blur(8px);
+  background: rgb(10 26 48 / 64%);
+  backdrop-filter: blur(12px);
 }
 .report-gate__dialog {
-  width: min(100%, 580px);
-  padding: 40px;
+  box-sizing: border-box;
+  width: min(100%, 520px);
+  max-height: calc(100dvh - 64px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 36px;
   margin: auto;
-  border-radius: var(--radius);
+  border-radius: 16px;
   background: var(--paper);
   color: var(--ink);
   box-shadow: 0 24px 72px rgb(8 24 50 / 24%);
+  scrollbar-width: thin;
+  scrollbar-color: #8faacd #edf5ff;
+  caret-color: var(--auth-accent);
+}
+.report-gate__dialog ::selection {
+  color: #17335b;
+  background: #d9e8ff;
 }
 .report-gate__dialog:focus {
   outline: none;
 }
 .report-gate__lock {
-  color: var(--green-dark);
+  color: var(--auth-accent);
   margin-bottom: 20px;
 }
 .report-gate__dialog h1 {
@@ -112,15 +147,16 @@
 .report-gate__description {
   margin: 0;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.85;
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
 .report-gate__retention {
-  margin: 28px 0 10px;
-  font-size: 16px;
-  font-weight: 700;
+  margin: 20px 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
   line-height: 1.75;
   word-break: keep-all;
   overflow-wrap: anywhere;
@@ -129,7 +165,7 @@
 .report-gate__expiry {
   margin: 6px 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
 }
 .report-gate__expiry time {
@@ -156,6 +192,20 @@
   white-space: normal;
   line-height: 1.5;
 }
+.report-gate .button.primary,
+.report-gate .auth-primary {
+  background: var(--auth-accent);
+  border-color: var(--auth-accent);
+  color: #fff;
+}
+.report-gate .button.primary:hover,
+.report-gate .auth-primary:hover {
+  background: var(--auth-accent-hover);
+  border-color: var(--auth-accent-hover);
+}
+.report-gate a:not(.button) {
+  color: var(--auth-accent);
+}
 .report-gate__discard {
   display: block;
   min-height: 44px;
@@ -173,8 +223,71 @@
 .report-gate__discard:hover {
   color: var(--ink);
 }
-.report-gate button:focus-visible {
-  outline: 3px solid var(--green);
+.report-gate__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: -12px 0 18px;
+  padding: 8px 0;
+  color: #42608a;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.report-gate__back svg {
+  transform: rotate(180deg);
+}
+.report-gate__back:hover {
+  color: var(--auth-accent);
+}
+.report-gate__auth-panel {
+  padding: 0;
+}
+.report-gate__auth-panel h1 {
+  font-size: 26px;
+  margin: 0 0 12px;
+}
+.report-gate__auth-panel .auth-description {
+  font-size: 16px;
+  margin: 0 0 24px;
+}
+.report-gate__auth-panel input {
+  font-size: 16px;
+  min-height: 48px;
+}
+.report-gate__auth-panel label,
+.report-gate__auth-panel .auth-switch,
+.report-gate__auth-panel .auth-back,
+.report-gate__auth-panel .forgot-link,
+.report-gate__auth-panel .input-hint,
+.report-gate__auth-panel .password-wrap button {
+  font-size: 14px;
+}
+.report-gate__auth-panel .auth-primary {
+  font-size: 16px;
+  min-height: 48px;
+}
+.report-gate__auth-panel .auth-back,
+.report-gate__auth-panel .auth-switch a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.report-gate__auth-panel .auth-confirmation {
+  font-size: 14px;
+  line-height: 1.8;
+}
+.report-gate__dialog--auth > .report-gate__description {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.report-gate :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--auth-accent);
   outline-offset: 3px;
 }
 .report-gate button:disabled {
@@ -196,9 +309,12 @@
   }
   .report-gate__dialog {
     padding: 28px 24px;
+    max-height: calc(100dvh - 40px);
   }
   .report-gate__skeleton {
     width: calc(100% - 32px);
+  }
+  .report-gate__paper {
     padding: 28px;
   }
   .report-gate__skeleton-columns {

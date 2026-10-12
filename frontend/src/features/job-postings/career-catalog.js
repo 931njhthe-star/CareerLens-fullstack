@@ -16,7 +16,10 @@ function markdownSection(markdown, name) {
       continue;
     }
     if (!active) continue;
-    const item = line.replace(/^\s*-\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').trim();
+    const item = line
+      .replace(/^\s*-\s*/, '')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .trim();
     if (item) result.push(item);
   }
   return result;
@@ -48,6 +51,7 @@ export function parseCareerCatalog(items) {
     const company = markdownField(item.content, '회사명');
     const title = markdownField(item.content, '공고명');
     const role = markdownField(item.content, '직무명').replace(/\s+/g, ' ').trim();
+    const roleCategory = typeof item.role_category === 'string' ? item.role_category.trim() : '';
     if (!company || !title || !role)
       throw new Error(`${item.filename || item.id + '.md'}에서 필수 공고 항목을 찾지 못했습니다.`);
 
@@ -56,6 +60,7 @@ export function parseCareerCatalog(items) {
       rolesByLabel.get(role) || {
         id: `role-${item.id}`,
         label: role,
+        role_category: roleCategory,
         description: markdownField(item.content, '직무 소개'),
       },
     );
@@ -63,6 +68,7 @@ export function parseCareerCatalog(items) {
       id: `backup-${item.id}`,
       company,
       role,
+      role_category: roleCategory,
       title,
       location: markdownField(item.content, '근무지') || '근무지 협의',
       employment_type: markdownField(item.content, '고용형태') || '정보 없음',
@@ -71,8 +77,9 @@ export function parseCareerCatalog(items) {
       description: postingDescription(item.content),
       source_markdown: item.content,
       source_name: 'local_markdown',
-      source_external_id: `${item.id}.md`,
+      source_external_id: item.filename || `${item.id}.md`,
       source_type: 'example',
+      is_example: true,
       is_saved: false,
     };
   });

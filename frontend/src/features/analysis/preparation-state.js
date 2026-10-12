@@ -1,3 +1,5 @@
+import { publicErrorMessage } from '../../shared/api/error-messages.js';
+
 export const PREPARATION_STAGES = [
   { id: 'resume', label: '이력서 근거 확인' },
   { id: 'role', label: '희망 직무 기준 확인' },
@@ -85,7 +87,7 @@ export async function runPreparationStages({ initial, request, signal, onSnapsho
       onWorkspace(result);
       onSnapshot(preparationSnapshot(preparation));
     } catch (error) {
-      if (!signal.aborted) onSnapshot(preparationSnapshot(preparation, stage.id, error.message));
+      if (!signal.aborted) onSnapshot(preparationSnapshot(preparation, stage.id, publicErrorMessage(error)));
       throw error;
     }
   }

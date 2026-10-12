@@ -1,0 +1,692 @@
+:root {
+  --motion-stage-height: min(558px, calc((100vw - 32px) * 0.516666667), 46svh);
+  scroll-padding-top: calc(var(--motion-stage-height) + 58px);
+  scroll-padding-bottom: 128px;
+}
+.motion-preview-page {
+  margin: 0;
+  background: #f5f8ff;
+  color: #122b52;
+  font-family:
+    'Pretendard',
+    'Noto Sans KR',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+.motion-preview {
+  --motion-blue: #2459ee;
+  --motion-line: #dae4f5;
+  --motion-muted: #60718c;
+  width: min(1080px, calc(100% - 80px));
+  margin: 0 auto;
+  padding: calc(var(--motion-stage-height) + 76px) 0 110px;
+}
+.motion-preview * {
+  box-sizing: border-box;
+}
+.motion-preview a {
+  color: inherit;
+  text-decoration: none;
+}
+.motion-preview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.motion-preview__brand {
+  display: flex;
+  align-items: baseline;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+}
+.motion-preview__brand > span:first-child {
+  color: var(--motion-blue);
+}
+.motion-preview__review-label {
+  padding: 6px 10px;
+  border: 1px solid #d9e4f9;
+  border-radius: 5px;
+  background: #edf3ff;
+  color: #365d9b;
+  font-size: 11px;
+  font-weight: 600;
+}
+.motion-preview__intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 30px;
+  margin: 32px 0 25px;
+}
+.motion-preview__intro h1 {
+  margin: 0;
+  font-size: clamp(25px, 2.6vw, 36px);
+  line-height: 1.45;
+  letter-spacing: -0.045em;
+  font-weight: 750;
+}
+.motion-preview__intro div > p:last-child {
+  max-width: 76ch;
+  margin: 12px 0 0;
+  color: var(--motion-muted);
+  font-size: 14px;
+  line-height: 1.85;
+  word-break: keep-all;
+}
+.motion-preview__mobile-break {
+  display: none;
+}
+.motion-preview__jump {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px 0;
+  border-bottom: 1px solid #afc1df;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.motion-preview__jump span {
+  color: var(--motion-blue);
+}
+.motion-preview__player {
+  border: 1px solid #cfddf5;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 10px 35px #254c9010;
+}
+.motion-preview__workflow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--motion-line);
+}
+.motion-preview__workflow li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  min-height: 66px;
+  border-right: 1px solid var(--motion-line);
+  color: #7486a0;
+  font-size: 14px;
+  font-weight: 650;
+}
+.motion-preview__workflow li:last-child {
+  border: 0;
+}
+.motion-preview__workflow li::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  height: 3px;
+  left: 24px;
+  right: 24px;
+  background: transparent;
+}
+.motion-preview__workflow li.is-active {
+  color: #173057;
+}
+.motion-preview__workflow li.is-active::after {
+  background: var(--motion-blue);
+}
+.motion-preview__step-number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #edf3ff;
+  color: #4d6485;
+  font-size: 12px;
+}
+.is-active .motion-preview__step-number {
+  background: var(--motion-blue);
+  color: #fff;
+}
+.motion-preview__scene {
+  position: relative;
+  height: auto;
+  aspect-ratio: 1200 / 620;
+  width: calc(var(--motion-stage-height) * 1.935483871);
+  max-width: 100%;
+  margin: 0 auto;
+  isolation: isolate;
+  overflow: hidden;
+  background: #fff;
+}
+.motion-preview__viewport {
+  position: fixed;
+  z-index: 20;
+  inset: 0 0 auto;
+  padding-top: 12px;
+  border-bottom: 1px solid var(--motion-line);
+  background: #fff;
+  pointer-events: none;
+}
+.motion-preview__anchor-note {
+  margin: 0;
+  padding: 2px 16px 12px;
+  color: #4d6485;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+.motion-preview__scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.motion-preview__scene-title {
+  position: absolute;
+  top: 8.87%;
+  left: 4.167%;
+  margin: 0;
+  color: #122d55;
+  font-size: clamp(13px, 2.55vw, 34px);
+  font-weight: 750;
+  line-height: 1.3;
+  letter-spacing: -0.045em;
+  pointer-events: none;
+}
+.motion-preview__scene-tag {
+  position: absolute;
+  top: 23px;
+  right: 25px;
+  color: #7184a3;
+  font-size: 11px;
+  letter-spacing: 0.015em;
+  pointer-events: none;
+}
+.motion-preview__transport {
+  padding: 18px 24px 19px;
+  border-top: 1px solid var(--motion-line);
+  background: #fcfdff;
+}
+.motion-preview button {
+  min-height: 38px;
+  border: 1px solid var(--motion-line);
+  border-radius: 6px;
+  padding: 8px 13px;
+  background: #fff;
+  color: #2d4567;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 140ms,
+    background 140ms,
+    color 140ms;
+}
+.motion-preview button:hover {
+  background: #f0f5ff;
+  border-color: #95afe7;
+}
+.motion-preview :is(a, button, input):focus-visible {
+  outline: 3px solid #63c6fa;
+  outline-offset: 3px;
+}
+.motion-preview__playback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 294px;
+}
+.motion-preview__dock {
+  position: fixed;
+  z-index: 30;
+  inset: auto 0 0;
+  padding: 14px max(20px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
+  border-top: 1px solid var(--motion-line);
+  background: #f5f8ff;
+}
+.motion-preview__dock-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.motion-preview button.motion-preview__play {
+  min-width: 74px;
+  border-color: #2459ee;
+  background: #2459ee;
+  color: #fff;
+}
+.motion-preview button.motion-preview__play:hover {
+  background: #1648d6;
+}
+.motion-preview__playback output {
+  margin-left: auto;
+  color: #4d6485;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+.motion-preview__timeline-label {
+  display: block;
+  height: 0;
+  overflow: hidden;
+}
+.motion-preview__timeline {
+  display: block;
+  width: 100%;
+  margin: 13px 0 17px;
+  accent-color: #2459ee;
+  cursor: pointer;
+}
+.motion-preview__options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.motion-preview .motion-preview__guide {
+  display: flex;
+  width: auto;
+  max-width: none;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  color: #617493;
+  font-size: 12px;
+  cursor: pointer;
+}
+.motion-preview__guide span {
+  white-space: nowrap;
+}
+.motion-preview .motion-preview__guide input[type='checkbox'] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  accent-color: #2459ee;
+}
+.motion-preview button.motion-preview__quiet {
+  min-height: 30px;
+  padding: 5px 11px;
+  background: transparent;
+  border-color: transparent;
+  color: #4d6485;
+  font-weight: 500;
+}
+.motion-preview button.motion-preview__quiet:hover {
+  background: #ecf3ff;
+}
+.motion-preview button.motion-preview__analysis {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  margin-left: auto;
+  border-color: #2459ee;
+  color: #fff;
+  background: #2459ee;
+}
+.motion-preview button.motion-preview__analysis:hover {
+  border-color: #1648d6;
+  background: #1648d6;
+}
+.motion-preview__steps {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 15px;
+}
+.motion-preview__steps button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px 6px;
+  border-color: transparent;
+  background: transparent;
+  color: #74839a;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.motion-preview__steps button > span {
+  font-size: 11px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+.motion-preview__steps button[aria-pressed='true'] {
+  border-color: #cbdbfb;
+  background: #eaf1ff;
+  color: #2459ee;
+}
+.motion-preview__caption {
+  display: flex;
+  gap: 24px;
+  min-height: 105px;
+  padding: 24px 5px 18px;
+}
+.motion-preview__caption-index {
+  padding-top: 2px;
+  margin: 0;
+  color: #4d6485;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.motion-preview__caption h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  letter-spacing: -0.025em;
+}
+.motion-preview__caption div > p {
+  margin: 0;
+  color: #4d6485;
+  font-size: 13px;
+  line-height: 1.8;
+  word-break: keep-all;
+}
+.motion-preview__storyboard {
+  padding-top: 39px;
+  margin-top: 12px;
+  border-top: 1px solid #dce5f4;
+  scroll-margin-top: 16px;
+}
+.motion-preview__section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 25px;
+}
+.motion-preview__section-header h2 {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+.motion-preview__section-header > p {
+  margin: 0 0 2px;
+  color: #4d6485;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.motion-preview__frames {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px 24px;
+}
+.motion-preview__frame {
+  min-width: 0;
+}
+.motion-preview__frame-image {
+  overflow: hidden;
+  border: 1px solid #d8e3f6;
+  border-radius: 9px;
+  background: #fff;
+}
+.motion-preview__frame canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 620;
+}
+.motion-preview__frame-text {
+  display: flex;
+  gap: 13px;
+  margin: 16px 1px 0;
+}
+.motion-preview__frame-number {
+  padding-top: 3px;
+  color: #2459ee;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.motion-preview__frame h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  letter-spacing: -0.035em;
+}
+.motion-preview__frame p {
+  min-height: 45px;
+  margin: 0;
+  color: #687a94;
+  font-size: 12px;
+  line-height: 1.8;
+  word-break: keep-all;
+}
+.motion-preview__frame-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+.motion-preview__frame-actions button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.motion-preview__frame-actions button:last-child {
+  background: transparent;
+  border-color: transparent;
+  color: #667e9f;
+}
+.motion-preview__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 42px;
+  padding: 19px 20px;
+  border: 1px solid #d8e3f5;
+  border-radius: 7px;
+  background: #eff4fd;
+}
+.motion-preview__note > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid #7b95be;
+  border-radius: 50%;
+  color: #6a85b0;
+  font-size: 11px;
+  font-family: Georgia, serif;
+}
+.motion-preview__note p {
+  margin: 0;
+  color: #4d6485;
+  font-size: 11px;
+  line-height: 1.8;
+  word-break: keep-all;
+}
+.motion-preview__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 29px;
+  color: #4d6485;
+  font-size: 11px;
+}
+.motion-preview__footer span {
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  font-size: 13px;
+}
+.motion-preview__footer p {
+  margin: 0;
+}
+.motion-preview__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (min-width: 1450px) {
+  .motion-preview__scene-title {
+    font-size: 36px;
+  }
+}
+@media (max-width: 980px) {
+  .motion-preview {
+    width: calc(100% - 40px);
+  }
+  .motion-preview__intro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 18px;
+    margin-top: 40px;
+  }
+  .motion-preview__steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .motion-preview__steps button {
+    min-height: 40px;
+  }
+  .motion-preview__scene-title {
+    font-size: 2.65vw;
+  }
+  .motion-preview__section-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+@media (max-width: 600px) {
+  .motion-preview {
+    width: calc(100% - 28px);
+    padding-bottom: calc(140px + env(safe-area-inset-bottom));
+  }
+  .motion-preview__brand {
+    font-size: 21px;
+  }
+  .motion-preview__review-label {
+    font-size: 11px;
+    padding: 5px 7px;
+  }
+  .motion-preview__intro {
+    margin: 32px 3px 23px;
+  }
+  .motion-preview__intro h1 {
+    font-size: 25px;
+  }
+  .motion-preview__intro div > p:last-child {
+    font-size: 12px;
+  }
+  .motion-preview__mobile-break {
+    display: initial;
+  }
+  .motion-preview__workflow li {
+    min-height: 51px;
+    gap: 5px;
+    font-size: 11px;
+  }
+  .motion-preview__workflow li::after {
+    left: 10px;
+    right: 10px;
+  }
+  .motion-preview__step-number {
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+  }
+  .motion-preview__scene-title {
+    font-size: 2.62vw;
+  }
+  .motion-preview__scene-tag {
+    top: 9px;
+    right: 9px;
+    font-size: 11px;
+  }
+  .motion-preview__transport {
+    padding: 13px 12px;
+  }
+  .motion-preview__options {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .motion-preview__guide {
+    font-size: 11px;
+  }
+  .motion-preview button.motion-preview__quiet {
+    margin-left: auto;
+    padding-inline: 2px;
+    font-size: 11px;
+  }
+  .motion-preview button.motion-preview__analysis {
+    justify-content: center;
+    width: 100%;
+    margin-top: 0;
+    min-height: 40px;
+  }
+  .motion-preview__dock {
+    padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  }
+  .motion-preview__dock-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .motion-preview__playback {
+    min-width: 0;
+  }
+  .motion-preview__steps {
+    gap: 3px;
+    margin-top: 11px;
+  }
+  .motion-preview__steps button {
+    gap: 4px;
+    padding: 8px 3px;
+    font-size: 11px;
+  }
+  .motion-preview__caption {
+    gap: 16px;
+    padding: 21px 3px 12px;
+    min-height: 120px;
+  }
+  .motion-preview__caption h2 {
+    font-size: 15px;
+  }
+  .motion-preview__caption div > p {
+    font-size: 12px;
+  }
+  .motion-preview__frames {
+    grid-template-columns: 1fr;
+    gap: 29px;
+  }
+  .motion-preview__storyboard {
+    padding-top: 27px;
+  }
+  .motion-preview__section-header h2 {
+    font-size: 22px;
+  }
+  .motion-preview__frame p {
+    min-height: 0;
+  }
+  .motion-preview__note {
+    padding: 15px 13px;
+    gap: 10px;
+  }
+  .motion-preview__footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-preview button {
+    transition: none;
+  }
+}

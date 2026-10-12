@@ -1,9 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "server.py": {
-      "maxDuration": 60,
-      "includeFiles": "{public/**,src/**,data/job_postings/**}"
-    }
-  }
-}

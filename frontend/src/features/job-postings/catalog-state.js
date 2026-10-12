@@ -1,3 +1,5 @@
+import { opportunityRoute, opportunityPath } from './opportunity-state.js';
+
 const fields = ['company', 'role', 'job_text'];
 
 export function postingDraft(posting) {
@@ -20,19 +22,45 @@ export function withPostingSelection(edits, posting) {
 export function catalogRoute(hash) {
   const [path, query = ''] = hash.replace(/^#\//, '').split('?');
   if (path === 'jobs') return { kind: 'list', query: new URLSearchParams(query) };
-  if (path === 'jobs/new') return { kind: 'new' };
+  const context = catalogQuery(new URLSearchParams(query));
+  const navigation = context.has('return_to') ? { query: context } : {};
+  if (path === 'jobs/new') return { kind: 'new', ...navigation };
   const match = /^jobs\/([^/]+)(\/edit)?$/.exec(path);
   if (!match) return null;
   try {
-    return { kind: match[2] ? 'edit' : 'detail', id: decodeURIComponent(match[1]) };
+    return { kind: match[2] ? 'edit' : 'detail', id: decodeURIComponent(match[1]), ...navigation };
   } catch {
     return null;
   }
 }
 
+// Return destinations are local workflow state, never arbitrary URLs.
+export function catalogReturnPath(value) {
+  if (
+    typeof value !== 'string' ||
+    !/^opportunities\?[^?#]*$/.test(value) ||
+    /[\u0000-\u001f\u007f\\]/.test(value)
+  )
+    return '';
+  const route = opportunityRoute(`#/${value}`);
+  return route?.role_id.trim() ? opportunityPath(route, route.page, route.selected) : '';
+}
+
+export function catalogPath(path, input) {
+  if (!catalogReturnPath(input?.get('return_to'))) return path;
+  return `${path}?${catalogQuery(input)}`;
+}
+
 export function catalogQuery(input) {
   const query = new URLSearchParams();
-  for (const name of ['q', 'location', 'employment_type', 'experience_level', 'skill']) {
+  for (const name of [
+    'q',
+    'role_category',
+    'location',
+    'employment_type',
+    'experience_level',
+    'skill',
+  ]) {
     const value = String(input.get(name) || '').trim();
     if (value) query.set(name, value);
   }
@@ -40,6 +68,8 @@ export function catalogQuery(input) {
   const page = Number(input.get('page'));
   query.set('page', String(Number.isInteger(page) && page > 0 ? page : 1));
   query.set('page_size', '12');
+  const returnTo = catalogReturnPath(input.get('return_to'));
+  if (returnTo) query.set('return_to', returnTo);
   return query;
 }
 

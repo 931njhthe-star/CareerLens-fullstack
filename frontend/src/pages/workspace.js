@@ -35,32 +35,25 @@ function renderResumePage(draft) {
         <h2>
           모의지원까지,
           <br />
-          네 단계로 준비해요.
+          세 단계로 준비해요.
         </h2>
         <ol class="journey">
           <li class="current">
             <span>1</span>
             <div>
               <strong>이력서 입력</strong>
-              <p>내 경험과 성과를 준비해요.</p>
+              <p>Markdown(.md) 이력서를 첨부하거나 본문을 직접 입력해요.</p>
             </div>
           </li>
           <li>
             <span>2</span>
             <div>
-              <strong>희망 직무 선택</strong>
-              <p>앞으로 하고 싶은 일을 정해요.</p>
+              <strong>채용공고 선택</strong>
+              <p>희망 직무를 정하고, 관련 공고를 비교해 선택해요.</p>
             </div>
           </li>
           <li>
             <span>3</span>
-            <div>
-              <strong>채용공고 선택</strong>
-              <p>희망 직무에 맞는 공고를 비교해요.</p>
-            </div>
-          </li>
-          <li>
-            <span>4</span>
             <div>
               <strong>모의지원</strong>
               <p>선택한 공고로 보고서를 확인해요.</p>
@@ -75,7 +68,7 @@ function renderResumePage(draft) {
           </p>
         </div>
         <p class="small-note">
-          스캔한 PDF는 본문을 읽지 못할 수 있어요. 그럴 때는 텍스트를 직접 붙여넣어 주세요.
+          첨부는 10MB 이하의 UTF-8 Markdown(.md) 파일만 지원해요. 불러온 뒤 본문을 확인해 주세요.
         </p>
       </aside>
     </div>

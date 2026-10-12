@@ -1,0 +1,151 @@
+/* Actual backend results stay inside the selected studio report composition. */
+.report-save-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 30ch;
+}
+
+.report-save-control small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.report-backend {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+
+.report-backend__metadata,
+.report-backend__scores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: 18px 24px;
+  margin: 24px 0;
+}
+
+.report-backend__metadata > div,
+.report-backend__scores > div {
+  min-width: 0;
+}
+
+.report-backend dt {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.report-backend dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.report-backend__scores {
+  padding: 22px 0;
+  border-block: 1px solid var(--line);
+}
+
+.report-backend__scores dd {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.report-backend__body {
+  min-width: 0;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+
+.report-backend__body :is(h2, h3, h4, h5, h6) {
+  margin: 28px 0 12px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.report-backend__body h2 {
+  font-size: 21px;
+}
+
+.report-backend__body h3 {
+  font-size: 18px;
+}
+
+.report-backend__body :is(p, ul, ol, blockquote, pre) {
+  margin: 12px 0;
+}
+
+.report-backend__body :is(ul, ol) {
+  padding-left: 24px;
+}
+
+.report-backend__body li + li {
+  margin-top: 5px;
+}
+
+.report-backend__body blockquote {
+  padding: 10px 16px;
+  border-left: 3px solid var(--green, #2563eb);
+  background: var(--canvas);
+  color: var(--muted);
+}
+
+.report-backend__body code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--canvas);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.92em;
+}
+
+.report-backend__body pre {
+  padding: 14px 16px;
+  overflow-x: auto;
+  background: var(--canvas);
+}
+
+.report-backend__body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.report-backend__body a {
+  color: var(--green, #2563eb);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.report-backend__body .markdown-table-wrap {
+  width: 100%;
+  margin: 18px 0;
+  overflow-x: auto;
+}
+
+.report-backend__body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.report-backend__body :is(th, td) {
+  min-width: 100px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.report-backend__body th {
+  background: var(--canvas);
+}
+
+.report-backend__body hr {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}

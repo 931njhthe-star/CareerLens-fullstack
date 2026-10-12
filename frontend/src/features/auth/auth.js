@@ -1,4 +1,6 @@
-import { api, getSession, setSession, startDemoSession } from '../../shared/api/client.js';
+import { api, getSession, setSession } from '../../shared/api/client.js';
+import { publicErrorMessage } from '../../shared/api/error-messages.js';
+import { beginFlowEvent, finishFlowEvent, recordFlowEvent } from '../activity-flow/events.js';
 import {
   escapeHtml as e,
   icon,
@@ -115,7 +117,6 @@ function renderSocialLogin(session) {
       href="#/email">
       ${icon('mail', 18)} 이메일로 계속하기
     </a>
-    ${renderDemoLoginButton()}
     <p class="auth-switch">
       처음 방문하셨나요?
       <a href="#/signup">이메일로 회원가입</a>
@@ -123,18 +124,7 @@ function renderSocialLogin(session) {
   `;
 }
 
-function renderDemoLoginButton() {
-  return `
-    <div class="auth-demo-login">
-      <p>백엔드 인증 없이 화면을 체험할 수 있습니다. 입력·결과는 현재 탭에만 저장됩니다.</p>
-      <button class="button secondary" type="button" data-demo-login>
-        시연용 계정으로 로그인
-      </button>
-    </div>
-  `;
-}
-
-function renderCredentialsForm(page) {
+function renderCredentialsForm(page, session, showAlternativeMethods = true) {
   const emailField = renderEmailField();
   const passwordField = renderPasswordField(page);
   return `
@@ -160,7 +150,7 @@ function renderCredentialsForm(page) {
       ${emailField}
       ${passwordField}
       ${
-        page === 'email'
+        page === 'email' && session.capabilities?.password_reset !== false
           ? `
             <div class="forgot-link">
               <a href="#/forgot">비밀번호를 잊으셨나요?</a>
@@ -181,12 +171,11 @@ function renderCredentialsForm(page) {
           : '이미 계정이 있으신가요? <a href="#/email">로그인</a>'
       }
     </p>
-    ${page === 'email' ? renderDemoLoginButton() : ''}
-    <a
+    ${showAlternativeMethods ? `<a
       class="auth-back"
       href="#/login">
       다른 방법으로 계속하기
-    </a>
+    </a>` : ''}
   `;
 }
 
@@ -242,13 +231,17 @@ function renderResetPassword(page) {
   `;
 }
 
-function renderAuthForm(page, session) {
+function renderAuthForm(page, session, showAlternativeMethods = true) {
+  if (['forgot', 'reset'].includes(page) && session.capabilities?.password_reset === false)
+    return '<p>현재 서비스에서는 비밀번호 재설정을 지원하지 않습니다. 계정 관리자에게 문의해 주세요.</p><a class="button" href="#/email">로그인으로 돌아가기</a>';
   switch (page) {
     case 'login':
-      return renderSocialLogin(session);
+      return session.backend_adapter
+        ? renderCredentialsForm('email', session, showAlternativeMethods)
+        : renderSocialLogin(session);
     case 'email':
     case 'signup':
-      return renderCredentialsForm(page);
+      return renderCredentialsForm(page, session, showAlternativeMethods);
     case 'forgot':
       return renderForgotPassword(session);
     default:
@@ -256,16 +249,32 @@ function renderAuthForm(page, session) {
   }
 }
 
-export function renderAuth(page, session, draft = {}) {
+/** The same credential controls can also live inside the protected report gate. */
+export function renderAuthPanel(page, session = {}, { embedded = true } = {}) {
   const [title, description] = screens[page] || screens.login;
-  const form = renderAuthForm(page, session);
+  return `
+    <h1 id="auth-title">${title}</h1>
+    <p class="auth-description">${description}</p>
+    <div id="auth-notices" aria-live="polite"></div>
+    ${renderAuthForm(page, session, !(embedded && session.backend_adapter))}
+    ${page === 'signup' ? `
+      <div id="auth-confirmation" class="auth-confirmation" hidden>
+        <p>가장 최근에 받은 인증 메일의 링크를 한 번만 열어 주세요. 인증 후 이 창으로 돌아와 로그인하면 첨부한 이력서를 이어서 사용할 수 있어요.</p>
+        <p>메일이 없거나 링크가 만료되었다면 서비스 담당자에게 새 인증 메일을 요청해 주세요.</p>
+        <a class="button auth-primary" href="#/email">이메일로 로그인</a>
+      </div>` : ''}
+  `;
+}
+
+export function renderAuth(page, session, draft = {}) {
   return `
     <div class="auth-page">
       <header class="auth-topbar">
         <a
           class="brand"
-          href="#/intro">
-          <span class="brand-symbol">${icon('lens', 23)}</span>
+          href="#/intro"
+          aria-label="CareerLens 홈">
+          <img class="brand-symbol" src="/public/brand-eye.svg" width="34" height="34" alt="" aria-hidden="true">
           Career<b>Lens</b>
         </a>
         ${renderPrimaryNav(page, draft)}
@@ -279,12 +288,7 @@ export function renderAuth(page, session, draft = {}) {
           aria-labelledby="auth-title">
           <div class="auth-form-panel">
             <span class="eyebrow">YOUR NEXT CHAPTER</span>
-            <h1 id="auth-title">${title}</h1>
-            <p class="auth-description">${description}</p>
-            <div
-              id="auth-notices"
-              aria-live="polite"></div>
-            ${form}
+            ${renderAuthPanel(page, session, { embedded: false })}
           </div>
           <aside class="auth-preview">
             <span class="preview-label">가능성을 발견하는 순간</span>
@@ -333,20 +337,8 @@ export function renderAuth(page, session, draft = {}) {
   `;
 }
 
-export function bindAuth({ onSession, resetToken, navigate }) {
-  document.querySelector?.('[data-demo-login]')?.addEventListener('click', async (event) => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    try {
-      startDemoSession();
-      const session = await getSession();
-      setSession(session);
-      await onSession(session);
-    } catch (error) {
-      button.disabled = false;
-      notice(error.message, 'error', document.getElementById('auth-notices'));
-    }
-  });
+export function bindAuth({ onSession, resetToken, navigate, demo = false }) {
+  const source = demo ? 'demo' : 'observed';
   document.querySelectorAll('[data-provider]').forEach((button) =>
     button.addEventListener('click', () => {
       location.assign(`/api/v1/auth/oauth/${encodeURIComponent(button.dataset.provider)}`);
@@ -360,17 +352,51 @@ export function bindAuth({ onSession, resetToken, navigate }) {
     event.currentTarget.textContent = visible ? '숨김' : '표시';
   });
   const form = document.getElementById('auth-form');
+  form?.addEventListener('invalid', () => {
+    recordFlowEvent('input_check', { state: 'blocked', source });
+  }, true);
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const action = form.dataset.action;
     const body = Object.fromEntries(new FormData(form));
     if (action === 'reset-password') body.token = resetToken;
     await pending(form, '처리하는 중…', async () => {
+      recordFlowEvent('input_check', { source });
+      const signupObservation = action === 'register'
+        ? beginFlowEvent('signup', { source }) : null;
+      // Confirmed login is emitted by the app's flowSession after getSession.
+      // This start marker has no inflight handle, so a navigation cannot leak one.
+      if (action === 'login') recordFlowEvent('auth', { state: 'pending', source });
+      let authenticated = false;
+      let deliveryObservation;
       try {
         const result = await api(`/auth/${action}`, { method: 'POST', body });
+        if (
+          action === 'register' &&
+          (result.email_confirmation_required === true ||
+            (Object.hasOwn(result, 'access_token') && !result.access_token))
+        ) {
+          finishFlowEvent(signupObservation, { state: 'waiting' });
+          recordFlowEvent('notice', { state: 'waiting', source });
+          notice(
+            '이메일 인증을 기다리고 있습니다. 이미 인증한 계정이면 바로 로그인해 주세요.',
+            'info',
+            document.getElementById('auth-notices'),
+          );
+          const confirmation = document.getElementById('auth-confirmation');
+          if (confirmation) confirmation.hidden = false;
+          return;
+        }
+        if (action === 'register') finishFlowEvent(signupObservation);
         if (['login', 'register'].includes(action)) {
+          // Measure only a stored guest-result unlock, starting at successful
+          // authentication response and including session verification and claim.
+          if (document.querySelector?.('[data-report-gate]:not([data-report-preview])'))
+            deliveryObservation = beginFlowEvent('result_delivery', { source, execution: 'guest' });
           setSession(result);
-          await onSession(await getSession());
+          const nextSession = await getSession();
+          authenticated = Boolean(nextSession.user);
+          await onSession(nextSession, { deliveryObservation });
         } else if (action === 'reset-password') {
           history.replaceState({}, '', location.pathname + location.hash);
           await onSession(await getSession());
@@ -385,13 +411,27 @@ export function bindAuth({ onSession, resetToken, navigate }) {
           );
         } else {
           notice(
-            result.message || '입력하신 이메일이 가입되어 있다면 재설정 안내가 준비됩니다.',
+            '입력하신 이메일이 가입되어 있다면 재설정 안내가 준비됩니다.',
             'success',
             document.getElementById('auth-notices'),
           );
         }
       } catch (error) {
-        notice(error.message, 'error', document.getElementById('auth-notices'));
+        finishFlowEvent(deliveryObservation, { state: 'failed' });
+        finishFlowEvent(signupObservation, { state: 'failed' });
+        if (action === 'login' && !authenticated)
+          recordFlowEvent('auth', { state: 'failed', source });
+        recordFlowEvent('notice', { state: 'failed', source });
+        notice(
+          publicErrorMessage(error, { path: `/auth/${action}` }) +
+            (action === 'register' ? ' 이미 인증한 계정이라면 이메일로 로그인해 주세요.' : ''),
+          'error',
+          document.getElementById('auth-notices'),
+        );
+        if (action === 'register') {
+          const confirmation = document.getElementById('auth-confirmation');
+          if (confirmation) confirmation.hidden = false;
+        }
       }
     });
   });

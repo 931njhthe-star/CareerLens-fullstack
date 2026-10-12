@@ -66,24 +66,6 @@ export function jobEditor(draft) {
           placeholder="예: 의료 서비스 기획자"
           autocomplete="off" />
       </div>
-      <div class="field">
-        <label for="career-focus">
-          특히 살펴보고 싶은 부분
-          <span class="optional-label">선택</span>
-        </label>
-        <p
-          id="career-focus-hint"
-          class="input-hint">
-          관심 있는 업무나 이력서에서 점검하고 싶은 경험을 적어주세요.
-        </p>
-        <textarea
-          id="career-focus"
-          name="focus"
-          rows="5"
-          maxlength="1000"
-          aria-describedby="career-focus-hint"
-          placeholder="예: 데이터 분석 경험이 서비스 기획 업무에 어떻게 도움이 될지 알고 싶어요.">${e(target.focus || '')}</textarea>
-      </div>
       <div class="career-target-next">
         <span>${icon('lens', 21)}</span>
         <p>

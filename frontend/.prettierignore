@@ -1,0 +1,9 @@
+node_modules/
+.runtime/
+.venv/
+.env
+.env.*
+package-lock.json
+src/features/analysis/matching-eye.js
+contracts/
+src/shared/api/*.json

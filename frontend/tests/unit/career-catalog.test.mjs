@@ -43,8 +43,31 @@ test('frontend parses the original Markdown files into unique roles and source p
   assert.equal(catalog.postings.length, 3);
   assert.equal(catalog.postings[0].company, '예시 회사');
   assert.equal(catalog.postings[0].source_type, 'example');
+  assert.equal(catalog.postings[0].is_example, true);
   assert.match(catalog.postings[0].description, /원문 자격/);
   assert.equal(catalog.postings[0].source_markdown, original.content);
+});
+
+test('catalog source identity uses the actual filename supplied by the local endpoint', () => {
+  const item = { ...markdown('001', '직무', '회사'), filename: '001-revised.md' };
+  const catalog = parseCareerCatalog([item]);
+  assert.equal(catalog.postings[0].source_external_id, '001-revised.md');
+  assert.equal(catalog.postings[0].id, 'backup-001');
+});
+
+test('source job types group different titles without replacing role or source identities', () => {
+  const catalog = parseCareerCatalog([
+    { ...markdown('001', '모델 서빙', '회사 A'), role_category: '플랫폼·서빙' },
+    { ...markdown('002', '추론 최적화', '회사 B'), role_category: '플랫폼·서빙' },
+    markdown('003', '분류 없는 직무', '회사 C'),
+  ]);
+  assert.deepEqual(catalog.postings.map((posting) => posting.role_category), [
+    '플랫폼·서빙', '플랫폼·서빙', '',
+  ]);
+  assert.equal(catalog.roles[0].role_category, '플랫폼·서빙');
+  assert.equal(catalog.roles[1].label, '추론 최적화');
+  assert.equal(catalog.postings[1].source_external_id, '002.md');
+  assert.equal(catalog.roles[2].role_category, '');
 });
 
 test('frontend rejects malformed source files instead of hiding them', () => {

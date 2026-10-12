@@ -244,7 +244,7 @@ async def start(body: EvaluationRequest, request: Request, uid: str = Depends(us
     posting = await job(body.job_posting_id, request, uid)
     rubric, _ = await active_rubric(db)
     fingerprint = digest(json.dumps({'resume_id': str(body.resume_id), 'job_id': str(body.job_posting_id), 'resume_hash': digest(resume['original_text']),
-                                     'job_hash': digest(posting['description']), 'rubric_id': rubric['id'], 'scoring': 'career-lens-v1', 'model': config.openai_model}, sort_keys=True))
+                                     'job_hash': digest(posting['description']), 'rubric_id': str(rubric['id']), 'scoring': 'career-lens-v1', 'model': config.openai_model}, sort_keys=True))
     if idempotency_key:
         existing = await db.select('evaluation_runs', user_id=f'eq.{uid}', idempotency_key=f'eq.{idempotency_key}', limit=1)
         if existing:
@@ -256,7 +256,7 @@ async def start(body: EvaluationRequest, request: Request, uid: str = Depends(us
         'p_key': idempotency_key, 'p_fingerprint': fingerprint, 'p_model': config.openai_model,
         'p_snapshot': {'resume': resume, 'job': posting, 'resume_hash': digest(resume['original_text']), 'job_hash': digest(posting['description']), 'finance': finance,
                        'model_config': {'model': config.openai_model, 'embedding_model': config.embedding_model, 'embedding_dimensions': config.embedding_dimensions}}})
-    return {'run_id': runs[0]['id'], 'status': runs[0]['status'], 'status_url': f"/api/v1/evaluations/{runs[0]['id']}"}
+    return {'run_id': str(runs[0]['id']), 'status': runs[0]['status'], 'status_url': f"/api/v1/evaluations/{runs[0]['id']}"}
 
 
 @router.get('/evaluations', tags=['evaluations'])

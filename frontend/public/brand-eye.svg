@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Career Lens 눈 아이콘</title>
+  <desc id="desc">로딩 화면의 눈 윤곽과 동공 링을 단순화한 파란색 브랜드 아이콘.</desc>
+  <defs>
+    <radialGradient id="core">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".42" stop-color="#e4fbff" stop-opacity=".96"/>
+      <stop offset=".72" stop-color="#91e5ff" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#91e5ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="17" fill="#245be0"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 32C22 12.5 40.5 12.5 56 32C41.5 51.5 22 51.5 8 32Z" stroke="#89d9ff" stroke-width="4" opacity=".12"/>
+    <path d="M8 32C22 12.5 40.5 12.5 56 32M56 32C41.5 51.5 22 51.5 8 32" stroke="#fff" stroke-width="1.9"/>
+    <circle cx="32" cy="32" r="9.6" stroke="#d6f4ff" stroke-width="1.25"/>
+    <circle cx="32" cy="32" r="6.94" stroke="#9fe5ff" stroke-width="1.65" stroke-dasharray="8.2 2.7" transform="rotate(-22 32 32)"/>
+  </g>
+  <circle cx="32" cy="32" r="4.1" fill="url(#core)"/>
+</svg>
