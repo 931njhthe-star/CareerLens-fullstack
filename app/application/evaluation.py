@@ -1,6 +1,7 @@
 import asyncio
 import json
 import inspect
+import logging
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from uuid import uuid4
@@ -12,6 +13,19 @@ from app.modules.analysis.scoring.rubric import VERSION, CRITERIA
 from app.modules.analysis.reporting.markdown import render
 from app.modules.analysis.reporting.audit import render_execution_report, write_report
 from app.retrieval.indexing.markdown import chunks, digest
+
+log = logging.getLogger(__name__)
+
+
+def evaluation_as_of(created_at) -> str:
+    from zoneinfo import ZoneInfo
+    if isinstance(created_at, str):
+        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+    if not isinstance(created_at, datetime):
+        raise ValueError('Snapshot created_at must be a timestamp')
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return created_at.astimezone(ZoneInfo('Asia/Seoul')).date().isoformat()
 
 
 async def active_rubric(db):
@@ -75,6 +89,8 @@ async def execute(db, llm, config, run, checkpointer=None):
             raise
         except Exception as exc:
             status, error_type = 'failed', type(exc).__name__
+            log.error('Evaluation stage failed: stage=%s error_type=%s document_kind=%s reason=%s',
+                      stage, error_type, getattr(exc, 'kind', None), getattr(exc, 'reason', 'unavailable'))
             raise
         finally:
             await record_timing(
@@ -218,10 +234,9 @@ async def execute(db, llm, config, run, checkpointer=None):
         llm, trace, search, criterion_event, record_llm_call, record_criterion_timing,
     )
     graph = engine.build(checkpointer)
-    from zoneinfo import ZoneInfo
     state = {'run_id': run_id, 'resume': parsed_resume, 'job': parsed_job, 'resume_text': resume['original_text'], 'job_text': job['description'],
              'finance': finance, 'chunks': text_chunks, 'results': {}, 'rechecks': 0,
-             'as_of': datetime.fromisoformat(snapshot['created_at'].replace('Z', '+00:00')).astimezone(ZoneInfo('Asia/Seoul')).date().isoformat()}
+             'as_of': evaluation_as_of(snapshot['created_at'])}
     graph_config = {'configurable': {'thread_id': run['graph_thread_id']}, 'recursion_limit': 15}
     previous = await graph.aget_state(graph_config) if checkpointer and run.get('recovery_count', 0) else None
     async def invoke_graph():
