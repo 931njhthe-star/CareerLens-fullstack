@@ -1,6 +1,6 @@
 # CareerLens 백엔드와 Render 배포
 
-Python 3.12 이상. FastAPI 한 프로세스가 API와 Evaluation Worker를 함께 실행합니다. 데이터베이스는 Render PostgreSQL이며 비동기 psycopg 연결을 사용합니다.
+Python 3.13 (`.python-version`으로 고정). FastAPI 한 프로세스가 API와 Evaluation Worker를 함께 실행합니다. 데이터베이스는 Render PostgreSQL이며 비동기 psycopg 연결을 사용합니다.
 
 ## 로컬 실행
 
@@ -28,9 +28,10 @@ python -m venv .venv
 
 저장소 루트의 `render.yaml` Blueprint를 사용하면 Web Service 하나와 PostgreSQL 하나를 생성할 수 있습니다.
 
-1. 프로젝트를 GitHub에 push하고 Render에서 **New → Blueprint**로 저장소를 연결합니다.
-2. Render가 요청하면 `OPENAI_API_KEY`를 입력하고 Blueprint를 생성합니다. `JWT_SECRET_KEY`는 Render가 생성하며 `DATABASE_URL`은 같은 Blueprint의 PostgreSQL 내부 연결값으로 연결됩니다.
-3. 새 DB에 한 번만 로컬에서 연결해 스키마를 초기화합니다. Render 대시보드의 내부 URL은 로컬 컴퓨터에서 사용할 수 없으므로 DB Info 화면의 external connection string을 이용하고, 초기화 후 외부 접근을 제한합니다.
+1. 프로젝트를 GitHub에 push하고 Render에서 사용할 워크스페이스를 선택한 뒤 **New → Blueprint**로 이 저장소를 연결합니다. 교육용 AIO 2기 워크스페이스 초대가 있다면 개인 워크스페이스 대신 해당 워크스페이스를 선택합니다.
+2. Blueprint 이름은 CareerLens용으로 정하고 경로는 저장소 루트의 `render.yaml`을 사용합니다. 가이드 예시의 `AIO2-team<N>`와 `blueprints/team<N>.yaml`은 해당 교육 저장소의 팀 전용 설정이라 이 저장소에 적용하지 않습니다. 요금 예상과 생성할 리소스 이름이 맞는지 확인한 다음 진행합니다.
+3. Render가 요청하면 `OPENAI_API_KEY`와 프론트엔드의 `CORS_ORIGINS`를 입력하고 Blueprint를 생성합니다. `JWT_SECRET_KEY`는 Render가 생성하며 `DATABASE_URL`은 같은 Blueprint의 PostgreSQL 내부 연결값으로 연결됩니다.
+4. 새 DB에 한 번만 로컬에서 연결해 스키마를 초기화합니다. Render 대시보드의 내부 URL은 로컬 컴퓨터에서 사용할 수 없으므로 DB Info 화면의 external connection string을 이용하고, 초기화 후 외부 접근을 제한합니다.
 
 ```powershell
 $env:DATABASE_URL = 'Render의 external connection string'
@@ -40,7 +41,6 @@ $env:DATABASE_URL = 'Render의 external connection string'
 Remove-Item Env:DATABASE_URL
 ```
 
-4. Render Web Service의 `CORS_ORIGINS`에 실제 프론트엔드 origin을 설정합니다. Render 시작 명령은 Blueprint에 포함되어 있고 `/health`는 DB 연결까지 확인합니다.
 5. 배포 후 서비스 `/health`, `/docs`, 회원가입·로그인, Markdown 업로드, 공고 조회, 평가 생성·진행률·결과 다운로드를 확인합니다.
 
 Render PostgreSQL은 지원 버전에서 pgvector를 제공합니다. 통합 스키마가 `CREATE EXTENSION vector`를 실행합니다. [Render PostgreSQL 확장 안내](https://render.com/docs/postgresql-extensions)
