@@ -1,10 +1,23 @@
 """Deployment boundaries without real keys, models, databases or cloud resources."""
 import os
 from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
 import server
+
+
+def test_frontend_server_imports_as_backend_package():
+    root = Path(__file__).resolve().parents[2]
+    subprocess.run(
+        [sys.executable, "-c", "from frontend.server import create_app"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_private_docker_api_requires_operator_allowlist():

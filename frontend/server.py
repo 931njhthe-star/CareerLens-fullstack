@@ -17,10 +17,17 @@ from flask import Flask, Request as FlaskRequest, Response, jsonify, request, se
 from waitress import serve
 from werkzeug.exceptions import HTTPException, NotFound, Unauthorized, ServiceUnavailable
 from werkzeug.middleware.proxy_fix import ProxyFix
-from resume_conversion import MAX_UPLOAD_BYTES, extract_resume
-from guest_analysis_service import create_guest_blueprint
-from guest_analysis_engine import engine_available
-from job_catalog_service import install_job_catalog
+
+if __package__:
+    from .resume_conversion import MAX_UPLOAD_BYTES, extract_resume
+    from .guest_analysis_service import create_guest_blueprint
+    from .guest_analysis_engine import engine_available
+    from .job_catalog_service import install_job_catalog
+else:
+    from resume_conversion import MAX_UPLOAD_BYTES, extract_resume
+    from guest_analysis_service import create_guest_blueprint
+    from guest_analysis_engine import engine_available
+    from job_catalog_service import install_job_catalog
 
 ROOT = Path(__file__).resolve().parent
 
