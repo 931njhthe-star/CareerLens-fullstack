@@ -178,10 +178,20 @@ Flask는 브라우저에 화면을 제공하는 서버입니다. 현재 통합 �
 현재 기본 실행 구성은 FastAPI, Flask 화면, 분석 Worker를 하나의 프로세스에서 함께 실행합니다.
 회원 요청은 **접수 → DB 대기 → Worker 분석 → 결과 저장 → 조회**로 이어집니다.
 
+#### 전체 아키텍처 · 분석과 조회의 연결
+
+![CareerLens 배포 환경의 분석·조회 처리 순서 — 팀 아키텍처 설계서 원본](assets/architecture-system-notion.png)
+
+[팀 아키텍처 설계서](https://yleeylee.notion.site/CareerLens-d5d2b0d658a6822aa5478173218a475b)의 원본 도해입니다. 회원의 분석 접수부터 평가·저장, 보고서와 대시보드 조회까지 연결해 보여줍니다. 원본은 API와 별도 워커 구성을 설명하며, 현재 통합 구현의 기본 실행은 위 설명처럼 FastAPI·Flask·Worker가 같은 프로세스에서 동작합니다.
+
 ### 7개 노드가 만드는 하나의 보고서
 
 분석 전에는 선택 당시의 이력서와 공고를 보관하고, 경력·기술·요건을 구조화해 근거를 찾을 준비를 합니다.
 그다음 **4개 평가 노드를 병렬로 실행**하고, 결과를 모아 검토·재평가·계산합니다.
+
+![CareerLens 4개 평가 영역과 전체 검토 흐름 — 팀 아키텍처 설계서 원본](assets/architecture-agent-flow-notion.png)
+
+원본 도해의 **실무 경험 수준**은 서비스 화면의 **실무 경쟁력** 영역에 해당합니다. 출처: [팀 아키텍처 설계서 · 4개 평가 영역과 전체 검토 흐름](https://yleeylee.notion.site/CareerLens-d5d2b0d658a6822aa5478173218a475b#3f82b0d658a680f19cd9c4fe9683b1aa).
 
 ```mermaid
 flowchart TD
