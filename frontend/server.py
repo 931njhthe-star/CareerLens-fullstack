@@ -425,7 +425,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def create_app(backend_url=None):
+def create_app(backend_url=None, *, integrated=False):
     app = Flask(__name__, static_folder=None)
     app.request_class = InMemoryUploadRequest
     app.config.update(
@@ -654,6 +654,8 @@ def create_app(backend_url=None):
     @app.route("/api/<path:name>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     def api(name):
         if not origin:
+            if integrated and request.path == "/api/v1/auth/session":
+                return "", 404
             return (
                 jsonify(
                     error={

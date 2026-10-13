@@ -20,6 +20,15 @@ def test_frontend_server_imports_as_backend_package():
     )
 
 
+def test_integrated_frontend_exposes_session_contract_fallback_only():
+    integrated = server.create_app(backend_url="", integrated=True).test_client()
+    standalone = server.create_app(backend_url="").test_client()
+
+    assert integrated.get("/api/v1/auth/session").status_code == 404
+    assert integrated.get("/api/v1/me").status_code == 503
+    assert standalone.get("/api/v1/auth/session").status_code == 503
+
+
 def test_private_docker_api_requires_operator_allowlist():
     with patch.dict(os.environ, {"BACKEND_URL": "http://api:5301"}, clear=True):
         with pytest.raises(ValueError):
