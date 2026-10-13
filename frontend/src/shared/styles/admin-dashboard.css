@@ -427,6 +427,11 @@
 .admin-dashboard__detail-section {
   border-top: 1px solid var(--admin-line);
 }
+.admin-dashboard__detail-report-action {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+}
 .admin-dashboard__detail-section summary {
   padding: 17px 4px;
   color: var(--admin-ink);
