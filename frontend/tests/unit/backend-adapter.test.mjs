@@ -127,6 +127,28 @@ test('saved report pages filter completed evaluations while paging over the orig
   assert.deepEqual(calls, ['/evaluations?limit=20&offset=200', '/evaluations?limit=20&offset=220']);
 });
 
+test('saved report list uses database evaluations without querying local guest reports', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'fixture-token');
+  const calls = [];
+  const request = async (path) => {
+    calls.push(path);
+    if (path === '/local-guest/capabilities')
+      return { available: true, storage_origin: 'frontend_guest' };
+    if (path === '/me') return { user_id: 'member-1' };
+    if (path === '/evaluations?limit=20&offset=0')
+      return [{ id: 'db-run', status: 'completed', created_at: '2026-10-10T10:00:00Z' }];
+    assert.fail(`Unexpected request: ${path}`);
+  };
+  await backendApi('/auth/session', {}, request, ApiError);
+  const result = await backendApi('/account/reports', {}, request, ApiError);
+  assert.deepEqual(result.items.map(({ id }) => id), ['db-run']);
+  assert.deepEqual(calls, [
+    '/local-guest/capabilities',
+    '/me',
+    '/evaluations?limit=20&offset=0',
+  ]);
+});
+
 test('saved report list validates offsets and upstream arrays', async () => {
   sessionStorage.setItem('careerlens.backend.access-token', 'fixture-token');
   for (const offset of ['-1', '1.5', 'NaN', '1e2', '', '9007199254740992']) {

@@ -871,7 +871,6 @@ async function savedReportList(path, request, signal, ApiError) {
     error(ApiError, '보고서 목록 위치가 올바르지 않습니다.', 400, 'report_offset_invalid');
   if (demoSession()) return { items: [], next_offset: null, demo: true };
   requireReportSession(ApiError);
-  const hasLocalReports = localGuestStores.get(request) === true;
   request = ownerBoundRequest(request, signal).request;
   const runs = await request(`/evaluations?limit=${REPORT_PAGE_SIZE}&offset=${offset}`, { signal });
   if (
@@ -889,21 +888,11 @@ async function savedReportList(path, request, signal, ApiError) {
   const nextOffset = runs.length === REPORT_PAGE_SIZE ? offset + REPORT_PAGE_SIZE : null;
   if (nextOffset !== null && !Number.isSafeInteger(nextOffset))
     error(ApiError, '보고서의 다음 목록 위치가 올바르지 않습니다.', 502, 'report_offset_invalid');
-  let localItems = [];
-  if (offset === 0 && hasLocalReports) {
-    const response = await request('/local-guest/reports', { signal });
-    if (!Array.isArray(response.reports))
-      error(ApiError, '저장한 보고서 목록 형식이 올바르지 않습니다.', 502, 'report_list_invalid');
-    localItems = response.reports.filter((item) => ['completed', 'partial'].includes(item.status))
-      .map((item) => ({ id: `${LOCAL_GUEST_PREFIX}${item.run_id}`, status: item.status,
-        created_at: item.created_at, storage_origin: 'frontend_guest', can_delete: true,
-        job_context: { title: item.title || '', company: item.company_name || '' } }));
-  }
   const items = runs
       .filter((run) => ['completed', 'partial'].includes(run.status))
       .map(({ id, status, created_at }) => ({ id, status, created_at }));
   return {
-    items: localItems.length ? [...items, ...localItems].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)) : items,
+    items,
     next_offset: nextOffset,
   };
 }
