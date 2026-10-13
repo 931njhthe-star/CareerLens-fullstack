@@ -16,9 +16,27 @@ const settle = () => new Promise(setImmediate);
 // The credential handler, API adapter, verified-session callback, metadata store
 // and channel publisher are production code. Only HTTP and browser surfaces are
 // synthetic; this never authenticates a real account or requests model work.
-for (const action of ['login', 'register']) {
-  test(`${action} publishes verified member state to an already subscribed viewer before workspace loading finishes`, async () => {
-    const names = ['document', 'window', 'location', 'history', 'sessionStorage', 'BroadcastChannel', 'fetch', 'FormData'];
+for (const [action, workspaceFails] of [
+  ['login', false],
+  ['login', true],
+  ['register', false],
+  ['register', true],
+]) {
+  const scenario = workspaceFails
+    ? 'leaves the auth screen after workspace restoration fails'
+    : 'publishes verified member state before workspace loading finishes';
+  test(`${action} ${scenario}`, async () => {
+    const names = [
+      'document',
+      'window',
+      'location',
+      'history',
+      'sessionStorage',
+      'BroadcastChannel',
+      'fetch',
+      'FormData',
+      'setTimeout',
+    ];
     const originals = Object.fromEntries(names.map((key) => [key, globalThis[key]]));
     const stored = new Map();
     const channels = [];
@@ -31,7 +49,11 @@ for (const action of ['login', 'register']) {
     const button = { disabled: false, innerHTML: 'submit' };
     let submit;
     let releaseWorkspace;
-    const workspace = new Promise((resolve) => { releaseWorkspace = resolve; });
+    let rejectWorkspace;
+    const workspace = new Promise((resolve, reject) => {
+      releaseWorkspace = resolve;
+      rejectWorkspace = reject;
+    });
     let workspaceRequested = false;
     const form = {
       dataset: { action },
@@ -44,8 +66,13 @@ for (const action of ['login', 'register']) {
     let dispose;
     try {
       globalThis.document = {
-        getElementById: (id) => id === 'app' ? app : id === 'auth-form' ? form
-          : id === 'auth-notices' ? { replaceChildren(node) { notices.push(node.textContent); } } : null,
+        getElementById(id) {
+          if (id === 'app') return app;
+          if (id === 'auth-form') return form;
+          if (['auth-notices', 'notices'].includes(id))
+            return { replaceChildren(node) { notices.push(node.textContent); } };
+          return null;
+        },
         querySelector: () => null, querySelectorAll: () => [],
         createElement: () => ({ setAttribute() {}, scrollIntoView() {} }),
       };
@@ -77,6 +104,7 @@ for (const action of ['login', 'register']) {
       globalThis.FormData = class {
         *[Symbol.iterator]() { yield ['email', 'PRIVATE_EMAIL@example.test']; yield ['password', 'PRIVATE_PASSWORD']; }
       };
+      globalThis.setTimeout = (callback) => callback();
       globalThis.fetch = async (url) => {
         requests.push(url);
         if (url === '/api/v1/auth/login' || url === '/api/v1/auth/signup')
@@ -110,7 +138,7 @@ for (const action of ['login', 'register']) {
       vm.runInContext(`session = { user: null, backend_adapter: true };
         workspace = { draft: {}, questions: [] };
         navigate = (page) => destinations.push(page);`, context);
-      bindAuth({ onSession: context.onSession });
+      bindAuth({ onSession: context.onSession, navigate: (page) => context.destinations.push(page) });
       const pending = submit({ preventDefault() {} });
       for (let index = 0; index < 12 && !workspaceRequested; index++) await settle();
       assert.equal(workspaceRequested, true);
@@ -125,9 +153,16 @@ for (const action of ['login', 'register']) {
       assert.doesNotMatch(JSON.stringify(messages), /PRIVATE_|password|access_token|refresh_token/);
       assert.ok(requests.includes(action === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/signup'));
       assert.ok(requests.includes('/api/v1/me'));
-      releaseWorkspace({ draft: {}, questions: [] });
+      if (workspaceFails) rejectWorkspace(Object.assign(new Error('workspace unavailable'), { status: 503 }));
+      else releaseWorkspace({ draft: {}, questions: [] });
       await pending;
-      assert.deepEqual(notices, []);
+      if (workspaceFails) {
+        await settle();
+        assert.equal(notices.length, 1);
+        assert.match(notices[0], /로그인되었습니다/);
+      } else {
+        assert.deepEqual(notices, []);
+      }
       assert.equal(context.destinations.at(-1), 'resume');
       viewer.postMessage({ kind: 'subscribe', stream });
       assert.equal(messages.at(-1).session.mode, 'member');

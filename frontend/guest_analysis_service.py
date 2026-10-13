@@ -417,7 +417,9 @@ class GuestAnalysisService:
             self.cleanup()
 
 
-def create_guest_blueprint(store_path, fetch_job, verify_user, runner=None, available=None, **options):
+def create_guest_blueprint(
+    store_path, fetch_job, verify_user, runner=None, available=None, reports_available=True, **options
+):
     if runner is None or available is None:
         if __package__:
             from .guest_analysis_engine import engine_available, run_analysis
@@ -461,7 +463,14 @@ def create_guest_blueprint(store_path, fetch_job, verify_user, runner=None, avai
 
     @blueprint.get("/capabilities")
     def capabilities():
-        response = jsonify({"available": service.is_available(), "storage_origin": "frontend_guest", "guest_ttl_seconds": service.ttl})
+        response = jsonify(
+            {
+                "available": service.is_available(),
+                "reports_available": reports_available,
+                "storage_origin": "frontend_guest",
+                "guest_ttl_seconds": service.ttl,
+            }
+        )
         # Establish the capability before the first double-clickable action,
         # without creating a database or starting any analysis worker.
         token, _ = service.session(create=True)

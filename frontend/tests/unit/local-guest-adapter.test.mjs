@@ -344,6 +344,23 @@ test('unavailable optional guest report list does not fail member workspace rest
   assert.ok(calls.some((call) => call.path === '/local-guest/reports'));
 });
 
+test('integrated deployment skips guest report restoration when ownership verification is unavailable', async () => {
+  const { api, calls } = harness({
+    '/local-guest/capabilities': () => ({
+      available: false,
+      reports_available: false,
+      storage_origin: 'frontend_guest',
+    }),
+  });
+  sessionStorage.setItem(TOKEN, 'owner-token');
+  await api('/auth/session');
+
+  const restored = await api('/workspace');
+
+  assert.equal(restored.draft.local_guest_report_unavailable, undefined);
+  assert.equal(calls.some((call) => call.path === '/local-guest/reports'), false);
+});
+
 test('authentication failures while restoring local reports still propagate', async () => {
   const { api } = harness({
     '/local-guest/reports': () => { throw new ApiError('authentication required', 401); },

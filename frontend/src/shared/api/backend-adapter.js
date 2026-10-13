@@ -219,7 +219,12 @@ async function probeLocalGuest(request, signal) {
     const capabilities = await request('/local-guest/capabilities', { signal, auth: false });
     const available = capabilities?.available === true && capabilities.storage_origin === 'frontend_guest';
     localGuestCapabilities.set(request, available);
-    localGuestStores.set(request, capabilities?.storage_origin === 'frontend_guest');
+    localGuestStores.set(
+      request,
+      capabilities?.reports_available === undefined
+        ? capabilities?.storage_origin === 'frontend_guest'
+        : capabilities.reports_available === true,
+    );
     return available;
   } catch (failure) {
     if (signal?.aborted || failure?.name === 'AbortError') throw failure;

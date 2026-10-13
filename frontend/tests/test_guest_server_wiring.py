@@ -62,9 +62,18 @@ class GuestServerWiringTests(unittest.TestCase):
         with patch("server.engine_available", return_value=True):
             response = app.test_client().get("/api/v1/local-guest/capabilities")
         self.assertTrue(response.json["available"])
+        self.assertTrue(response.json["reports_available"])
         self.assertIn("HttpOnly", response.headers["Set-Cookie"])
         self.assertEqual(opener.calls, [])
         self.assertFalse(app.extensions["guest_analysis"]._initialized)
+
+    def test_integrated_mode_does_not_advertise_guest_report_reads_without_backend_origin(self):
+        with patch("server.build_opener", return_value=Opener({})):
+            app = server.create_app("", integrated=True)
+        with patch("server.engine_available", return_value=True):
+            response = app.test_client().get("/api/v1/local-guest/capabilities")
+        self.assertFalse(response.json["available"])
+        self.assertFalse(response.json["reports_available"])
 
     def test_job_body_is_resolved_from_server_catalog_and_not_user_paths(self):
         catalog = {"items": [{"id": "005", "content":

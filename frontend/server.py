@@ -484,6 +484,7 @@ def create_app(backend_url=None, *, integrated=False):
         fetch_job=guest_catalog_job,
         verify_user=verify_guest_report_owner,
         available=lambda: bool(origin) and os.environ.get("CAREERLENS_GUEST_ANALYSIS", "1") != "0" and engine_available(),
+        reports_available=bool(origin),
     )
     app.register_blueprint(guest_api)
     app.extensions["guest_analysis"] = guest_api.guest_service

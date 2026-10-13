@@ -419,6 +419,19 @@ export function bindAuth({ onSession, resetToken, navigate, demo = false }) {
       } catch (error) {
         finishFlowEvent(deliveryObservation, { state: 'failed' });
         finishFlowEvent(signupObservation, { state: 'failed' });
+        if (authenticated && ['login', 'register'].includes(action)) {
+          recordFlowEvent('notice', { state: 'degraded', source });
+          navigate?.('resume');
+          setTimeout(
+            () =>
+              notice(
+                '로그인되었습니다. 일부 계정 정보를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.',
+                'info',
+              ),
+            0,
+          );
+          return;
+        }
         if (action === 'login' && !authenticated)
           recordFlowEvent('auth', { state: 'failed', source });
         recordFlowEvent('notice', { state: 'failed', source });
