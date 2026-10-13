@@ -388,7 +388,10 @@ class GuestAnalysisService:
 
 def create_guest_blueprint(store_path, fetch_job, verify_user, runner=None, available=None, **options):
     if runner is None or available is None:
-        from guest_analysis_engine import engine_available, run_analysis
+        if __package__:
+            from .guest_analysis_engine import engine_available, run_analysis
+        else:
+            from guest_analysis_engine import engine_available, run_analysis
         runner = runner or run_analysis
         available = available or engine_available
     service = GuestAnalysisService(store_path, fetch_job, verify_user, runner, available, **options)

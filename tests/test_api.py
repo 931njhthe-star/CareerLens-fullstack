@@ -53,6 +53,35 @@ def test_health_and_auth_required():
         assert client.get('/api/v1/jobs').status_code == 401
 
 
+def test_render_service_serves_frontend_and_conversion_routes():
+    with TestClient(app, base_url='http://localhost') as client:
+        page = client.get('/')
+        assert page.status_code == 200
+        assert 'text/html' in page.headers['content-type']
+        assert client.get('/src/app/main.js').status_code == 200
+        catalog = client.get('/api/v1/local-data/career-markdown')
+        assert catalog.status_code == 200
+        assert len(catalog.json()['items']) == 100
+        original = '# 이력서\n\nPython과 SQL 경험\n'
+        converted = client.post('/api/v1/local-data/convert-resume',
+                                files={'file': ('resume.md', original.encode('utf-8'), 'text/markdown')})
+        assert converted.status_code == 200
+        assert converted.json()['text'].strip() == original.strip()
+        for path in ('/.env', '/requirements.txt', '/app/main.py', '/frontend/server.py'):
+            assert client.get(path).status_code == 404
+
+
+def test_frontend_mount_keeps_backend_routes_and_authentication():
+    with TestClient(app, base_url='http://localhost') as client:
+        assert client.get('/healthz').json() == {'status': 'ok'}
+        assert client.get('/health').status_code == 200
+        assert client.get('/docs').status_code == 200
+        assert client.get('/api/v1/me').status_code == 401
+        assert client.get('/api/v1/jobs').status_code == 401
+        # The frontend must not proxy an unknown API request back to this service.
+        assert client.get('/api/v1/unknown-route').status_code == 404
+
+
 def test_lifespan_starts_and_stops_evaluation_worker(monkeypatch):
     started = threading.Event()
     stopped = threading.Event()

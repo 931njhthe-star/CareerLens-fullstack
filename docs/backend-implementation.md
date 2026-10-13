@@ -2,6 +2,8 @@
 
 Python 3.13 (`.python-version`으로 고정). FastAPI 한 프로세스가 API와 Evaluation Worker를 함께 실행합니다. 데이터베이스는 Render PostgreSQL이며 비동기 psycopg 연결을 사용합니다.
 
+같은 프로세스가 `frontend`의 Flask 앱도 제공하므로 Render 서비스 주소 `/`에서 화면을 열 수 있습니다. FastAPI의 API·`/docs`·health 경로를 먼저 처리하고, 화면·정적 파일·파일 변환·공개 공고 목록 요청을 프론트 앱으로 연결합니다. 시작 명령은 기존 `uvicorn app.main:app --host 0.0.0.0 --port $PORT`를 사용합니다. 프론트 `BACKEND_URL` 설정은 필요하지 않습니다. 루트 `requirements.txt`가 프론트 의존성도 설치합니다.
+
 ## 로컬 실행
 
 1. `.env.example`을 참고해 `.env`에 `DATABASE_URL`, `JWT_SECRET_KEY`, `OPENAI_API_KEY`를 설정합니다. JWT 키는 `python -c "import secrets; print(secrets.token_urlsafe(48))"`로 생성합니다.

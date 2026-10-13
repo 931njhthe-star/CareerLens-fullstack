@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.wsgi import WSGIMiddleware
+from frontend.server import create_app as create_frontend_app
 from app.core.config import settings
 from app.infrastructure.database.postgres import DB, DatabaseError
 from app.integrations.llm.client import LLM
@@ -76,3 +78,8 @@ async def health(request: Request):
 async def healthz():
     # Render liveness checks should not turn a temporary database/LLM outage into a restart loop.
     return {'status': 'ok'}
+
+
+# Keep API, docs, and health routes ahead of the frontend fallback.
+# Both applications share the same process and Render URL; no HTTP proxy loop.
+app.mount('/', WSGIMiddleware(create_frontend_app(backend_url='', integrated=True)), name='frontend')
