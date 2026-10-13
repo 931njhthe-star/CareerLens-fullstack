@@ -330,6 +330,30 @@ test('login on another tab restores an owned local report from server storage', 
   assert.equal(restored.draft.resume_text, 'Synthetic QA resume');
 });
 
+test('unavailable optional guest report list does not fail member workspace restoration', async () => {
+  const { api, calls } = harness({
+    '/local-guest/reports': () => { throw new ApiError('guest report service unavailable', 503); },
+  });
+  sessionStorage.setItem(TOKEN, 'owner-token');
+  await api('/auth/session');
+
+  const restored = await api('/workspace');
+
+  assert.equal(restored.draft.report, undefined);
+  assert.equal(restored.draft.local_guest_report_unavailable, true);
+  assert.ok(calls.some((call) => call.path === '/local-guest/reports'));
+});
+
+test('authentication failures while restoring local reports still propagate', async () => {
+  const { api } = harness({
+    '/local-guest/reports': () => { throw new ApiError('authentication required', 401); },
+  });
+  sessionStorage.setItem(TOKEN, 'owner-token');
+  await api('/auth/session');
+
+  await assert.rejects(api('/workspace'), { status: 401 });
+});
+
 test('incomplete and foreign-origin results cannot become a claimed report', async () => {
   for (const overrides of [{ status: 'running' }, { report_text: '' }, { storage_origin: 'other' }]) {
     const { api } = harness({ '/local-guest/analyses/guest-run/claim': () => result(overrides) });

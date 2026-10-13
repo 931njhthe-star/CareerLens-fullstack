@@ -56,6 +56,7 @@ let session;
 let workspace = { draft: {}, questions: [] };
 let edits = {};
 let navigationMessage;
+let navigationMessageType;
 let returnAfterLogin;
 let loginMessage;
 let selectedPosting;
@@ -383,6 +384,10 @@ function applyWorkspace(result, savedFields = []) {
   edits = remainingEdits(edits, savedFields, workspace.draft, result.draft);
   if (result.draft) workspace.draft = result.draft;
   if (result.questions) workspace.questions = result.questions;
+  if (result.draft?.local_guest_report_unavailable) {
+    navigationMessage = '로그인은 완료됐습니다. 이전 임시 체험 보고서를 일시적으로 복구하지 못했습니다. 잠시 후 마이페이지에서 다시 확인해 주세요.';
+    navigationMessageType = 'info';
+  }
 }
 
 async function loadWorkspace(savedFields = [], current = () => true) {
@@ -895,8 +900,9 @@ function render({ reportBridge } = {}) {
       });
     }
     if (navigationMessage) {
-      notice(navigationMessage, 'success');
+      notice(navigationMessage, navigationMessageType || 'success');
       navigationMessage = null;
+      navigationMessageType = null;
     } else if (
       page === 'result' &&
       ['resume_text', 'company', 'role', 'job_text', 'role_id', 'focus'].some((field) =>

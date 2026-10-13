@@ -1178,6 +1178,7 @@ async function getMemberWorkspace(request, signal) {
     }
   }
   const restoreLatest = !state.report && !state.suppress_latest_report && !state.pending_guest_analysis;
+  let localGuestReportUnavailable = false;
   if (restoreLatest) {
     try {
       const runs = await request('/evaluations?limit=1', { signal });
@@ -1201,18 +1202,25 @@ async function getMemberWorkspace(request, signal) {
     }
   }
   if (restoreLatest && localGuestStores.get(transport) === true) {
-    const response = await request('/local-guest/reports', { signal });
-    const latest = Array.isArray(response.reports)
-      ? response.reports.filter((item) => ['completed', 'partial'].includes(item.status))
-        .sort((a, b) => Date.parse(b.completed_at || b.created_at) - Date.parse(a.completed_at || a.created_at))[0]
-      : null;
-    if (latest && (!state.report || Date.parse(latest.completed_at || latest.created_at) > Date.parse(state.report_created_at || 0))) {
-      const local = await readLocalReport(latest.run_id, request, signal);
-      restoredLocalReport = local;
-      state.report = localReport(local, request.ApiError);
-      state.report_created_at = local.completed_at || local.created_at || '';
-      state.claimed_resume_text = local.resume_text || '';
-      saveState(state);
+    try {
+      const response = await request('/local-guest/reports', { signal });
+      const latest = Array.isArray(response.reports)
+        ? response.reports.filter((item) => ['completed', 'partial'].includes(item.status))
+          .sort((a, b) => Date.parse(b.completed_at || b.created_at) - Date.parse(a.completed_at || a.created_at))[0]
+        : null;
+      if (latest && (!state.report || Date.parse(latest.completed_at || latest.created_at) > Date.parse(state.report_created_at || 0))) {
+        const local = await readLocalReport(latest.run_id, request, signal);
+        restoredLocalReport = local;
+        state.report = localReport(local, request.ApiError);
+        state.report_created_at = local.completed_at || local.created_at || '';
+        state.claimed_resume_text = local.resume_text || '';
+        saveState(state);
+      }
+    } catch (failure) {
+      if (failure.name === 'AbortError') throw failure;
+      signal?.throwIfAborted();
+      if (![404, 409, 500, 502, 503, 504].includes(failure.status)) throw failure;
+      localGuestReportUnavailable = true;
     }
   }
   if (localRunId(state.report?.run_id)) {
@@ -1229,9 +1237,16 @@ async function getMemberWorkspace(request, signal) {
       draft.filename = '';
       saveState(state);
     } catch (failure) {
-      if (failure.status !== 404 && failure.status !== 410) throw failure;
-      state = { ...state, report: null, suppress_latest_report: true };
-      saveState(state);
+      if (failure.name === 'AbortError') throw failure;
+      signal?.throwIfAborted();
+      if (failure.status === 404 || failure.status === 410) {
+        state = { ...state, report: null, suppress_latest_report: true };
+        saveState(state);
+      } else if ([409, 500, 502, 503, 504].includes(failure.status)) {
+        localGuestReportUnavailable = true;
+      } else {
+        throw failure;
+      }
     }
   }
   if (state.report && !state.pending_guest_analysis) {
@@ -1253,6 +1268,7 @@ async function getMemberWorkspace(request, signal) {
   }
   if (state.preparation) draft.preparation = unavailablePreparation();
   assertCurrentOwner();
+  if (localGuestReportUnavailable) draft.local_guest_report_unavailable = true;
   return { user, workspace: { draft, questions: state.questions || [] }, state, key };
 }
 
