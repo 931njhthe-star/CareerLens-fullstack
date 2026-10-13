@@ -196,6 +196,26 @@ test('saved report access requires a token without reading the active workspace'
   }
 });
 
+test('dashboard evaluation list and detail requests reach the authenticated backend', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'fixture-token');
+  const calls = [];
+  const request = async (path, options) => {
+    calls.push({ path, options });
+    return path === '/evaluations?limit=100&offset=0'
+      ? [{ id: 'run-1', status: 'completed', created_at: '2026-10-13T00:00:00Z' }]
+      : { id: 'run-1', status: 'completed' };
+  };
+  const runs = await backendApi('/evaluations?limit=100&offset=0', {}, request, ApiError);
+  const runId = '11111111-1111-4111-8111-111111111111';
+  const run = await backendApi(`/evaluations/${runId}`, {}, request, ApiError);
+  assert.equal(runs[0].id, 'run-1');
+  assert.equal(run.id, 'run-1');
+  assert.deepEqual(calls.map(({ path }) => path), [
+    '/evaluations?limit=100&offset=0',
+    `/evaluations/${runId}`,
+  ]);
+});
+
 test('opening a saved report loads its latest completed document without reading or mutating the current draft', async () => {
   sessionStorage.setItem('careerlens.backend.access-token', 'fixture-token');
   const workspaceKey = 'careerlens.backend.workspace:user-1';

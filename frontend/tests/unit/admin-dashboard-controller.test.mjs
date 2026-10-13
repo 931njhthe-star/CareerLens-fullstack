@@ -6,7 +6,9 @@ import { enableBackendAdapter } from '../../src/shared/api/backend-adapter.js';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const summary = (ids = ['run-a', 'run-b']) => ({
-  summary: {}, stages: [], runs: ids.map((id) => ({ id, status: 'completed' })),
+  summary: {}, stages: [], runs: ids.map((id) => ({
+    id, status: 'completed', created_at: new Date(Date.now()).toISOString(),
+  })),
   generated_at: '2026-10-12T10:00:00Z',
 });
 function harness() {
@@ -45,7 +47,7 @@ function harness() {
 test('selected detail responses cannot cross selections, close, or disposal', async () => {
   const h = harness(), pending = [];
   const cleanup = mountAdminDashboard(h.root, { window: h.windowObject, api: async (path, options) => {
-    if (path.includes('?')) return summary();
+    if (path.startsWith('/evaluations?')) return summary();
     return new Promise((resolve) => pending.push({ path, resolve, signal: options.signal }));
   } });
   await tick();
@@ -72,7 +74,7 @@ test('missing detail refreshes the summary so deleted executions disappear', asy
   const h = harness();
   let count = 0;
   const cleanup = mountAdminDashboard(h.root, { window: h.windowObject, api: async (path) => {
-    if (path.includes('?')) return ++count === 1 ? summary() : summary(['run-b']);
+    if (path.startsWith('/evaluations?')) return ++count === 1 ? summary() : summary(['run-b']);
     throw { status: 404 };
   } });
   await tick();
@@ -116,7 +118,7 @@ test('visible periodic/focus refresh updates totals and stops while hidden or di
 test('an older server without detail support does not make an existing run look deleted', async () => {
   const h = harness();
   const cleanup = mountAdminDashboard(h.root, { window: h.windowObject, api: async (path) => {
-    if (path.includes('?')) return summary();
+    if (path.startsWith('/evaluations?')) return summary();
     throw { status: 404 };
   } });
   await tick();
@@ -128,15 +130,15 @@ test('an older server without detail support does not make an existing run look 
   cleanup();
 });
 
-test('dashboard summary and detail bypass browser cache with authenticated member requests', async () => {
+test('dashboard summary and detail use existing authenticated database routes without browser cache', async () => {
   const originalFetch = globalThis.fetch, originalStorage = globalThis.sessionStorage;
   globalThis.sessionStorage = { getItem: (key) => key.endsWith('access-token') ? 'private-fixture' : null };
   enableBackendAdapter();
   const calls = [];
   globalThis.fetch = async (url, options) => { calls.push({ url, options }); return Response.json({}); };
   try {
-    await api('/admin/evaluation-performance?days=30&run_limit=100');
-    await api('/admin/evaluation-performance/11111111-1111-4111-8111-111111111111');
+    await api('/evaluations?limit=100&offset=0');
+    await api('/evaluations/11111111-1111-4111-8111-111111111111');
     assert.equal(calls.length, 2);
     for (const { options } of calls) {
       assert.equal(options.cache, 'no-store');

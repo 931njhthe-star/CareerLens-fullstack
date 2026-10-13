@@ -22,7 +22,7 @@ import {
 const payload = (runs = []) => ({
   summary: { run_count: 999, avg_total_ms: 0, p95_total_ms: 1300 },
   stages: [],
-  runs,
+  runs: runs.map((run) => ({ created_at: new Date().toISOString(), ...run })),
 });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => {
@@ -102,10 +102,30 @@ test('ordinary signed-in members open the dashboard without an admin role', asyn
       },
     });
     await tick();
-    assert.equal(path, '/member/evaluation-performance?days=30&run_limit=100');
+    assert.equal(path, '/evaluations?limit=100&offset=0');
     assert.match(h.content.innerHTML, /실행 현황·목록/);
     cleanup();
   }
+});
+
+test('dashboard summary request filters the database run list by selected period', async () => {
+  const h = harness();
+  const calls = [];
+  const cleanup = mountAdminDashboard(h.root, {
+    api: async (path, options) => {
+      calls.push({ path, options });
+      return [
+        { id: 'recent-run', status: 'completed', created_at: new Date().toISOString() },
+        { id: 'old-run', status: 'failed', created_at: '2020-01-01T00:00:00Z' },
+      ];
+    },
+  });
+  await tick();
+  assert.equal(calls[0].path, '/evaluations?limit=100&offset=0');
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.match(h.content.innerHTML, />recent-run</);
+  assert.doesNotMatch(h.content.innerHTML, />old-run</);
+  cleanup();
 });
 
 test('dashboard shell starts loading with exactly six cards and accessible filters', () => {
@@ -325,7 +345,7 @@ test('public mount requests the bounded API without a user option and cleans lis
   });
   assert.equal(h.refresh.disabled, true);
   await tick();
-  assert.equal(calls[0][0], '/member/evaluation-performance?days=30&run_limit=100');
+  assert.equal(calls[0][0], '/evaluations?limit=100&offset=0');
   assert.ok(calls[0][1].signal instanceof AbortSignal);
   assert.match(h.content.innerHTML, /run-zero/);
   assert.equal(h.content.attrs['aria-busy'], 'false');
@@ -352,7 +372,7 @@ test('date changes abort stale work; late results and cleanup cannot repopulate 
   });
   h.change('[data-admin-days]', '7');
   assert.equal(requests[0].options.signal.aborted, true);
-  assert.match(requests[1].path, /days=7/);
+  assert.equal(requests[1].path, '/evaluations?limit=100&offset=0');
   requests[1].resolve(payload([{ id: 'new-data', status: 'completed' }]));
   await tick();
   requests[0].resolve(payload([{ id: 'stale-data', status: 'failed' }]));
@@ -405,7 +425,8 @@ test('403 clears private detail and preserves six unavailable cards with retry',
   const cleanup = mountAdminDashboard(h.root, {
     user,
     api: async (path) => {
-      if (/evaluation-performance\//.test(path)) return { run: { id: 'previous-private-run', stages: [] } };
+      if (path.startsWith('/evaluations/'))
+        return { id: 'previous-private-run', status: 'completed', stages: [] };
       requests++;
       if (requests === 1) return payload([{ id: 'previous-private-run', status: 'completed' }]);
       if (requests === 2) throw { status: 403, message: 'private backend trace' };
@@ -465,8 +486,8 @@ test('run selection opens loaded detail groups, restores focus on close, and cle
   h.nodes.set('[data-admin-run="0"]', { focus: () => rowFocus++ });
   const cleanup = mountAdminDashboard(h.root, {
     user: { id: 'signed-in-user', is_admin: true },
-    api: async (path) => /evaluation-performance\//.test(path)
-      ? { run: { id: 'selected-synthetic', status: 'completed', stages: [] } }
+    api: async (path) => path.startsWith('/evaluations/')
+      ? { id: 'selected-synthetic', status: 'completed', stages: [], test_evidence: [] }
       : payload([{ id: 'selected-synthetic', status: 'completed', stages: [] }]),
   });
   await tick();
