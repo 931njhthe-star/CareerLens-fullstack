@@ -157,6 +157,7 @@ export function classifyFlowRequest(path) {
   if (/^\/auth\/(signup|register)$/.test(clean)) return 'api_signup';
   if (/^\/auth\/(session|refresh)$/.test(clean) || clean === '/me') return 'api_session';
   if (clean === '/local-data/convert-resume') return 'api_convert';
+  if (clean === '/local-data/member-performance') return 'api_dashboard';
   if (/^\/evaluations\/[^/]+\/cancel$/.test(clean)) return 'api_cancel';
   if (/^\/(?:admin|member)\/evaluation-performance(?:\/[^/]+)?$/.test(clean)) return 'api_dashboard';
   if (/^\/evaluations\/[^/]+\/result$/.test(clean)) return 'api_report';

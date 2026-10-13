@@ -189,6 +189,7 @@ def member_dashboard_run(row: dict) -> dict:
 
 
 @router.get('/member/evaluation-performance', tags=['member'])
+@router.get('/local-data/member-performance', tags=['member'])
 async def member_evaluation_performance(
     request: Request,
     days: int = Query(30, ge=1, le=90),
