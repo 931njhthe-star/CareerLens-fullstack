@@ -27,6 +27,53 @@
   gap: 10px;
 }
 
+.account-menu .account-menu__mypage {
+  min-height: 42px;
+  padding: 9px 17px;
+  border-color: #174d9b;
+  border-radius: 9px;
+  background: #174d9b;
+  box-shadow: 0 3px 10px rgb(23 77 155 / 22%);
+  color: #fff;
+  font-size: 13px;
+}
+
+.account-menu .account-menu__mypage:hover {
+  background: #103e80;
+  box-shadow: 0 5px 14px rgb(23 77 155 / 30%);
+}
+
+.my-page__actions .my-page__dashboard-link,
+.my-page__actions .my-page__flow-link {
+  min-height: 52px;
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgb(23 77 155 / 18%);
+}
+
+.my-page__actions .my-page__dashboard-link {
+  border-color: #174d9b;
+  background: #174d9b;
+  color: #fff;
+}
+
+.my-page__actions .my-page__dashboard-link:hover {
+  background: #103e80;
+}
+
+.my-page__actions .my-page__flow-link {
+  border: 2px solid #14766a;
+  background: #eefaf7;
+  color: #105b52;
+}
+
+.my-page__actions .my-page__flow-link:hover {
+  background: #dff5ef;
+  box-shadow: 0 5px 14px rgb(20 118 106 / 22%);
+}
+
 .my-page__identity {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);

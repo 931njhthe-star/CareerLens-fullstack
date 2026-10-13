@@ -119,7 +119,8 @@ test('initial and demo states do not invent saved report records', () => {
 test('all authenticated members can open the dashboard without gaining admin rights', () => {
   for (const is_admin of [undefined, false, true, 'true']) {
     const user = { id: 'member', is_admin };
-    assert.match(myPage(user), /href="#\/admin">대시보드/);
+    assert.match(myPage(user), /class="button primary my-page__dashboard-link" href="#\/admin">대시보드/);
+    assert.match(myPage(user), /class="button secondary my-page__flow-link" href="\/\?view=flow" data-flow-open>이용 흐름 새 창/);
     assert.equal(user.is_admin, is_admin);
   }
   for (const user of [

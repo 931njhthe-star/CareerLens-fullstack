@@ -50,7 +50,7 @@ const accountScopeLabel = (data) => data?.scope?.mode === 'account' ? '현재 �
   : data?.scope?.accounts === 'all' ? '전체 계정' : '현재 응답';
 
 export function renderFlowEntry(flowUrl) {
-  return `<section class="admin-dashboard__flow-entry" aria-labelledby="admin-flow-title"><div><h2 id="admin-flow-title">이 작업 창의 이용 흐름</h2><p id="admin-flow-help">현재 작업 창 하나와 연결된 별도 관찰 창을 엽니다. 다른 작업 창의 요청은 섞이지 않으며 원래 창을 새로고침해도 다시 연결합니다.</p></div><a class="button secondary" href="${e(flowUrl || '/?view=flow')}" aria-describedby="admin-flow-help" data-admin-flow>이용 흐름 새 창 열기</a></section>`;
+  return `<section class="admin-dashboard__flow-entry" aria-labelledby="admin-flow-title"><div><h2 id="admin-flow-title">이 작업 창의 이용 흐름</h2><p id="admin-flow-help">현재 작업 창 하나와 연결된 별도 관찰 창을 엽니다. 다른 작업 창의 요청은 섞이지 않으며 원래 창을 새로고침해도 다시 연결합니다.</p></div><a class="button primary admin-dashboard__flow-button" href="${e(flowUrl || '/?view=flow')}" aria-describedby="admin-flow-help" data-admin-flow>이용 흐름 새 창 열기</a></section>`;
 }
 
 export function overviewCards(data, { pending = true } = {}) {
@@ -172,6 +172,17 @@ function llmView(run) {
     missing('요청 해시는 개별 LLM 호출에 보낸 지시문과 입력을 구분합니다. 프롬프트 본문 해시는 지시문만, JSON 출력 스키마 해시는 응답 형식만 비교합니다. 입력 구성 해시·버전 번호·출력 자료형 이름과는 각각 다릅니다. 계측 추가 이전 호출의 본문·스키마 해시는 기록 없음으로 표시합니다.') + sectionNotice(run, 'llm', '위 사용량은 저장된 호출 기록에 근거합니다.');
 }
 
+function testEvidenceView(run) {
+  const evidence = records(run.test_evidence);
+  if (!evidence.length)
+    return sectionNotice(run, 'test_evidence', '실행에 연결된 시험 증거 기록 없음 · 운영 실행 완료와 시험 통과는 별개입니다.');
+  return table(
+    '실행에 연결된 시험 증거',
+    ['증거 유형', '기록 형식', '저장 시각'],
+    evidence.map((item) => `<tr><th scope="row">${text(item.type)}</th><td>${text(item.schema_version)}</td><td>${formatTime(item.created_at)}</td></tr>`),
+  ) + missing('시험 증거가 연결되어 있다는 사실만 표시합니다. 증거 기록만으로 시험 통과 여부를 판정하지 않습니다.');
+}
+
 export function renderRunDetail(run, {
   loading = false,
   error = false,
@@ -186,7 +197,7 @@ export function renderRunDetail(run, {
   let body;
   if (loading) body = '<p class="admin-dashboard__missing" role="status">선택한 실행의 저장 기록을 불러오는 중입니다.</p>';
   else if (error) body = `<div class="admin-dashboard__feedback" role="alert"><p>${error === 'not_found' ? '실행 목록에는 있지만 상세 API에서 기록이 제공되지 않습니다. 서버가 최신 버전인지 확인하고 다시 불러와 주세요.' : '상세 조회 실패 · 저장 기록을 불러오지 못했습니다.'}</p><button class="button secondary" type="button" data-admin-detail-retry>상세 다시 불러오기</button></div>`;
-  else body = detail('input', '입력·재현', inputView(run), true) + detail('nodes', '단계·노드·도구·기억', nodesView(run)) + detail('validation', '검증·재시도', validationView(run)) + detail('scores', '점수·보고서 저장', scoreTable(run) + persistenceView(run)) + detail('llm', 'LLM 사용량·요청 해시', llmView(run)) + detail('evidence', '시험 증거', sectionNotice(run, 'test_evidence', '실행에 연결된 시험 증거 기록 없음 · 운영 실행 완료와 시험 통과는 별개입니다.')) + `<div class="admin-dashboard__detail-report-action"><button type="button" class="button secondary compact" data-admin-execution-report aria-expanded="${reportOpen}">${reportOpen ? '테스트 보고서 닫기' : '테스트 보고서 보기'}</button></div>`;
+  else body = detail('input', '입력·재현', inputView(run), true) + detail('nodes', '단계·노드·도구·기억', nodesView(run)) + detail('validation', '검증·재시도', validationView(run)) + detail('scores', '점수·보고서 저장', scoreTable(run) + persistenceView(run)) + detail('llm', 'LLM 사용량·요청 해시', llmView(run)) + detail('evidence', '시험 증거', testEvidenceView(run)) + `<div class="admin-dashboard__detail-report-action"><button type="button" class="button primary admin-dashboard__report-button" data-admin-execution-report aria-expanded="${reportOpen}">${reportOpen ? '테스트 보고서 닫기' : '테스트 보고서 보기'}</button></div>`;
   const report = reportOpen ? `<section class="admin-dashboard__execution-report-content" role="region" aria-label="테스트 보고서 원문" aria-busy="${reportLoading}">${reportLoading
     ? '<p class="admin-dashboard__missing" role="status">실행 기록 원문을 불러오는 중입니다.</p>'
     : reportError

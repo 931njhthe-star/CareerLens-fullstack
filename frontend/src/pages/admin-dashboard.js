@@ -45,29 +45,13 @@ export function adminDashboard(user) {
 }
 
 async function loadMemberRuns(api, days, signal) {
-  const rows = await api(`/evaluations?limit=${RUN_LIMIT}&offset=0`, { signal });
-  if (!Array.isArray(rows)) {
-    if (Array.isArray(rows?.runs)) return rows;
-    throw new Error('Invalid evaluation list response');
-  }
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const runs = rows.filter((run) => {
-    const createdAt = typeof run?.created_at === 'string' ? Date.parse(run.created_at) : NaN;
-    return Number.isFinite(createdAt) && createdAt >= cutoff;
-  });
-  return {
-    generated_at: new Date().toISOString(),
-    runs,
-    stages: [],
-    summary: { run_count: runs.length },
-    scope: {
-      mode: 'account',
-      days,
-      run_limit: RUN_LIMIT,
-      limited: rows.length >= RUN_LIMIT,
-      reason: '로그인한 회원의 PostgreSQL 실행 기록을 조회합니다.',
-    },
-  };
+  const payload = await api(
+    `/member/evaluation-performance?days=${days}&run_limit=${RUN_LIMIT}`,
+    { signal },
+  );
+  if (!payload || !Array.isArray(payload.runs))
+    throw new Error('Invalid member performance response');
+  return payload;
 }
 
 /** Member read-only mount. Dispose requests and listeners on navigation. */
@@ -194,7 +178,7 @@ export function mountAdminDashboard(root, {
     detailLoading = true;
     render();
     try {
-      const payload = await api(`/evaluations/${encodeURIComponent(selectedId)}`, {
+      const payload = await api(`/member/evaluation-performance/${encodeURIComponent(selectedId)}`, {
         signal: detailRequest.signal,
       });
       if (disposed || current !== detailGeneration || data?.runs[selectedIndex]?.id !== selectedId) return;

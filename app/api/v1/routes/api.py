@@ -5,6 +5,7 @@ import secrets
 import time
 import tiktoken
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header, Query, Request
 from fastapi.encoders import jsonable_encoder
@@ -213,17 +214,79 @@ async def member_evaluation_performance(
             created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
         if isinstance(created_at, datetime) and created_at.tzinfo and created_at >= cutoff:
             runs.append(run)
+    if runs:
+        run_ids = ','.join(run['id'] for run in runs)
+        timing_rows = await db.select(
+            'evaluation_stage_timings',
+            run_id=f'in.({run_ids})',
+            select='run_id,stage,criterion_code,attempt_number,status,duration_ms,created_at',
+            order='created_at.asc',
+            limit=10000,
+        )
+    else:
+        timing_rows = []
+    timings_by_run = {run['id']: [] for run in runs}
+    timings_by_stage = {}
+    for timing in timing_rows:
+        run_id = str(timing['run_id'])
+        if run_id not in timings_by_run:
+            continue
+        safe_timing = {
+            'stage': timing.get('stage'),
+            'criterion_code': timing.get('criterion_code'),
+            'attempt_number': timing.get('attempt_number'),
+            'status': timing.get('status'),
+            'duration_ms': timing.get('duration_ms'),
+        }
+        timings_by_run[run_id].append(safe_timing)
+        timings_by_stage.setdefault(safe_timing['stage'], []).append(safe_timing['duration_ms'])
+
+    def percentile(values, fraction):
+        ordered = sorted(float(value) for value in values if isinstance(value, (int, float, Decimal)) and value >= 0)
+        if not ordered:
+            return None
+        position = (len(ordered) - 1) * fraction
+        lower = int(position)
+        upper = min(lower + 1, len(ordered) - 1)
+        return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+    total_values = []
+    for run in runs:
+        run_stages = timings_by_run[run['id']]
+        run['stages'] = run_stages
+        run['stages_collected'] = True
+        totals = [stage for stage in run_stages if stage['stage'] == 'evaluation_total']
+        if totals:
+            total = totals[-1].get('duration_ms')
+            if isinstance(total, (int, float, Decimal)) and total >= 0:
+                run['total_ms'] = total
+                total_values.append(float(total))
+    aggregate_stages = []
+    for stage_name, values in sorted(timings_by_stage.items()):
+        measured = [float(value) for value in values if isinstance(value, (int, float, Decimal)) and value >= 0]
+        aggregate_stages.append({
+            'stage': stage_name,
+            'sample_count': len(measured),
+            'avg_ms': sum(measured) / len(measured) if measured else None,
+            'p50_ms': percentile(measured, 0.5),
+            'p95_ms': percentile(measured, 0.95),
+            'max_ms': max(measured) if measured else None,
+        })
     return jsonable_encoder({
         'generated_at': datetime.now(timezone.utc),
         'runs': runs,
-        'stages': [],
-        'summary': {'run_count': len(runs)},
+        'stages': aggregate_stages,
+        'summary': {
+            'run_count': len(runs),
+            'avg_total_ms': sum(total_values) / len(total_values) if total_values else None,
+            'p95_total_ms': percentile(total_values, 0.95),
+        },
         'scope': {
             'mode': 'account',
             'days': days,
             'run_limit': run_limit,
             'limited': len(rows) >= run_limit,
-            'reason': '현재 계정의 최근 실행 표본입니다. 원본 API는 전체 계정 집계와 상세 계측을 일반 회원에게 제공하지 않습니다.',
+            'reason': '현재 계정의 최근 실행과 해당 실행에 저장된 단계 계측입니다. 다른 회원의 기록은 포함하지 않습니다.',
         },
     })
 
@@ -235,11 +298,231 @@ async def member_evaluation_performance_detail(
     uid: str = Depends(user),
 ):
     db, _, _ = services(request)
-    run = member_dashboard_run(await owned(db, 'evaluation_runs', run_id, uid))
-    reason = '현재 원본 API에서 이 상세 계측을 제공하지 않습니다. 실제 실행 여부나 0값으로 추정하지 않습니다.'
+    run_row = await owned(db, 'evaluation_runs', run_id, uid)
+    run = member_dashboard_run(run_row)
+    run.update({
+        key: run_row.get(key)
+        for key in (
+            'current_stage', 'progress_percent', 'model_name', 'prompt_version',
+            'workflow_version', 'scoring_version', 'embedding_model',
+        )
+    })
+
+    snapshots = await db.select(
+        'evaluation_input_snapshots',
+        run_id=f'eq.{run_id}',
+        select='resume_id,job_posting_id,resume_version,resume_hash,job_hash,snapshot_hash,model_config_snapshot,prompt_config_snapshot,input_manifest',
+        limit=1,
+    )
+    snapshot = snapshots[0] if snapshots else {}
+    timings = await db.select(
+        'evaluation_stage_timings',
+        run_id=f'eq.{run_id}',
+        select='stage,criterion_code,attempt_number,status,duration_ms,created_at',
+        order='created_at.asc',
+        limit=1000,
+    )
+    nodes = await db.select(
+        'node_executions',
+        run_id=f'eq.{run_id}',
+        select='node_name,criterion_id,attempt_number,status,duration_ms,completed_at',
+        order='created_at.asc',
+        limit=1000,
+    )
+    issues = await db.select(
+        'validation_issues',
+        run_id=f'eq.{run_id}',
+        select='criterion_id,issue_type,severity,resolution_status,created_at',
+        order='created_at.asc',
+        limit=500,
+    )
+    criteria = await db.select(
+        'criterion_results',
+        run_id=f'eq.{run_id}',
+        select='criterion_id,score,verdict,evidence,validation_status,attempt_count,evaluation_criteria(criterion_code,weight)',
+        order='updated_at.asc',
+        limit=100,
+    )
+    matches = await db.select(
+        'match_results',
+        run_id=f'eq.{run_id}',
+        select='id,resume_completeness,job_fit,qualifications,practical_competitiveness,overall_score,eligibility_status,validation_status',
+        limit=1,
+    )
+    reports = await db.select(
+        'analysis_reports',
+        match_result_id=f"eq.{matches[0]['id']}" if matches else 'eq.00000000-0000-0000-0000-000000000000',
+        select='id,status,report_text,created_at',
+        order='created_at.desc',
+        limit=100,
+    ) if matches else []
+    events = await db.select(
+        'evaluation_events',
+        run_id=f'eq.{run_id}',
+        select='event_type,attempt_number,event_data,criterion_id,created_at',
+        order='created_at.asc',
+        limit=1000,
+    )
+    fixtures = await db.select(
+        'intermediate_artifacts',
+        run_id=f'eq.{run_id}',
+        is_test_fixture='eq.true',
+        select='artifact_type,schema_version,created_at',
+        order='created_at.asc',
+        limit=200,
+    )
+
+    criterion_codes = {
+        str(item.get('criterion_id')): item.get('evaluation_criteria', {}).get('criterion_code')
+        for item in criteria
+        if item.get('criterion_id') and isinstance(item.get('evaluation_criteria'), dict)
+    }
+    result_criteria = []
+    for item in criteria:
+        relation = item.get('evaluation_criteria')
+        if not isinstance(relation, dict):
+            continue
+        evidence = item.get('evidence')
+        result_criteria.append({
+            'criterion_code': relation.get('criterion_code'),
+            'weight': relation.get('weight'),
+            'score': item.get('score'),
+            'verdict': item.get('verdict'),
+            'evidence_count': len(evidence) if isinstance(evidence, list) else None,
+        })
+
+    safe_issues = [{
+        'criterion_code': criterion_codes.get(str(item.get('criterion_id'))),
+        'type': item.get('issue_type'),
+        'severity': item.get('severity'),
+        'status': item.get('resolution_status'),
+    } for item in issues]
+    unresolved_issues = sum(
+        item.get('resolution_status') in {'open', 'rechecking'}
+        for item in issues
+    )
+    validation_attempts = [
+        item.get('attempt_count') for item in criteria
+        if isinstance(item.get('attempt_count'), int)
+    ]
+    validation_status = matches[0].get('validation_status') if matches else None
+    run['validation'] = ({
+        'status': validation_status,
+        'retry_count': sum(max(0, count - 1) for count in validation_attempts),
+        'unresolved_issue_count': unresolved_issues,
+        'revalidation_status': 'recorded' if any(count > 1 for count in validation_attempts) else 'not_rechecked',
+        'criterion_issue_count': sum(item.get('validation_status') != 'passed' for item in criteria),
+        'global_issue_count': len(issues),
+        'issues': safe_issues,
+    } if matches or criteria or issues else None)
+    run['scores'] = ({
+        **{
+            key: matches[0].get(key)
+            for key in (
+                'resume_completeness', 'job_fit', 'qualifications',
+                'practical_competitiveness', 'overall_score', 'eligibility_status',
+            )
+        },
+        'criteria': result_criteria,
+    } if matches or result_criteria else None)
+    run['stages'] = [{
+        'stage': item.get('stage'),
+        'criterion_code': item.get('criterion_code'),
+        'attempt_number': item.get('attempt_number'),
+        'status': item.get('status'),
+        'duration_ms': item.get('duration_ms'),
+    } for item in timings]
+    run['nodes'] = [{
+        'name': item.get('node_name'),
+        'criterion_code': criterion_codes.get(str(item.get('criterion_id'))),
+        'attempt_number': item.get('attempt_number'),
+        'status': item.get('status'),
+        'duration_ms': item.get('duration_ms'),
+    } for item in nodes]
+
+    llm_calls = []
+    for item in events:
+        event_data = item.get('event_data')
+        if not isinstance(event_data, dict) or not isinstance(event_data.get('phase'), str):
+            continue
+        usage = event_data.get('usage')
+        usage = usage if isinstance(usage, dict) else {}
+        llm_calls.append({
+            'phase': event_data.get('phase'),
+            'criterion_code': criterion_codes.get(str(item.get('criterion_id'))),
+            'model': event_data.get('model'),
+            'schema': event_data.get('schema'),
+            'success': event_data.get('success'),
+            'duration_ms': event_data.get('duration_ms'),
+            'input_tokens': usage.get('input_tokens'),
+            'output_tokens': usage.get('output_tokens'),
+            'request_sha256': event_data.get('request_hash'),
+        })
+    input_token_values = [
+        call['input_tokens'] for call in llm_calls
+        if isinstance(call.get('input_tokens'), (int, float)) and call['input_tokens'] >= 0
+    ]
+    output_token_values = [
+        call['output_tokens'] for call in llm_calls
+        if isinstance(call.get('output_tokens'), (int, float)) and call['output_tokens'] >= 0
+    ]
+    run['llm'] = ({
+        'model': run_row.get('model_name'),
+        'call_count': len(llm_calls),
+        'input_tokens': sum(input_token_values) if input_token_values else None,
+        'output_tokens': sum(output_token_values) if output_token_values else None,
+        'calls': llm_calls,
+    } if llm_calls else None)
+    if snapshots:
+        config_snapshot = snapshot.get('model_config_snapshot')
+        config_snapshot = config_snapshot if isinstance(config_snapshot, dict) else {}
+        run['input'] = {
+            'resume_id': snapshot.get('resume_id'),
+            'job_posting_id': snapshot.get('job_posting_id'),
+            'sha256': snapshot.get('snapshot_hash'),
+            'resume_sha256': snapshot.get('resume_hash'),
+            'job_sha256': snapshot.get('job_hash'),
+        }
+        prompt_snapshot = snapshot.get('prompt_config_snapshot')
+        prompt_snapshot = prompt_snapshot if isinstance(prompt_snapshot, dict) else {}
+        run['reproduction'] = {
+            'model': config_snapshot.get('model') or run_row.get('model_name'),
+            'prompt_version': run_row.get('prompt_version'),
+            'workflow_version': run_row.get('workflow_version'),
+            'scoring_version': run_row.get('scoring_version'),
+            'schema_version': prompt_snapshot.get('version'),
+            'schema_versions': sorted({
+                item.get('schema_version')
+                for item in fixtures
+                if isinstance(item.get('schema_version'), str)
+            }),
+        }
+    if matches:
+        run['persistence'] = {
+            'report_id': reports[0].get('id') if reports else None,
+            'status': reports[0].get('status') if reports else None,
+            'saved_at': reports[0].get('created_at') if reports else None,
+            'report_count': len(reports),
+            'has_body': bool(reports and isinstance(reports[0].get('report_text'), str) and reports[0]['report_text']),
+            'retrievable': bool(reports),
+            'result_schema_compatible': None,
+        }
+    run['test_evidence'] = [{
+        'type': item.get('artifact_type'),
+        'schema_version': item.get('schema_version'),
+        'created_at': item.get('created_at'),
+    } for item in fixtures]
+
     run['availability'] = {
-        name: {'status': 'unsupported', 'reason': reason}
-        for name in ('input', 'nodes', 'tools', 'memory', 'validation', 'scores', 'persistence', 'llm', 'usage', 'test_evidence')
+        'input': {'status': 'available' if snapshots else 'not_recorded'},
+        'nodes': {'status': 'available' if nodes or timings else 'not_recorded'},
+        'tools': {'status': 'not_recorded', 'reason': '도구별 호출 결과를 저장한 기록이 없습니다.'},
+        'memory': {'status': 'not_recorded', 'reason': '검색 결과 원문과 체크포인트 메타데이터는 이 API에서 보관·제공하지 않습니다.'},
+        'validation': {'status': 'available' if run['validation'] else 'not_recorded'},
+        'scores': {'status': 'available' if run['scores'] else 'not_recorded'},
+        'persistence': {'status': 'available' if matches else 'not_recorded'},
+        'llm': {'status': 'available' if llm_calls else 'not_recorded'},
+        'test_evidence': {'status': 'available' if fixtures else 'not_recorded'},
     }
     return jsonable_encoder({'run': run, 'scope': {'mode': 'account'}})
 

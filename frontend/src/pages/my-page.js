@@ -215,7 +215,7 @@ export function myPage(user, { hasCurrentReport = false, canDeleteReports = fals
         </div>
         <div class="my-page__actions">
           <a class="button secondary" href="#/resume">이력서로 가기 ${icon('arrow', 16)}</a>
-          ${typeof user?.id === 'string' && user.id.trim() && user.demo !== true ? '<a class="button secondary" href="#/admin">대시보드</a><a class="button secondary" href="/?view=flow" data-flow-open>이용 흐름 새 창</a>' : ''}
+          ${typeof user?.id === 'string' && user.id.trim() && user.demo !== true ? '<a class="button primary my-page__dashboard-link" href="#/admin">대시보드</a><a class="button secondary my-page__flow-link" href="/?view=flow" data-flow-open>이용 흐름 새 창</a>' : ''}
         </div>
       </div>
       <div class="my-page__body">

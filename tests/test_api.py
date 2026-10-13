@@ -145,18 +145,26 @@ def test_member_dashboard_lists_only_the_authenticated_users_recent_runs():
 
     class FakeDB:
         async def select(self, table, **params):
-            assert table == 'evaluation_runs'
-            assert params == {
-                'user_id': f'eq.{uid}',
-                'select': 'id,status,created_at,started_at,completed_at',
-                'order': 'created_at.desc',
-                'limit': 100,
-            }
+            if table == 'evaluation_runs':
+                assert params == {
+                    'user_id': f'eq.{uid}',
+                    'select': 'id,status,created_at,started_at,completed_at',
+                    'order': 'created_at.desc',
+                    'limit': 100,
+                }
+                return [
+                    {'id': recent_id, 'status': 'completed', 'created_at': now,
+                     'original_text': 'must not be returned'},
+                    {'id': old_id, 'status': 'failed',
+                     'created_at': now - timedelta(days=31)},
+                ]
+            assert table == 'evaluation_stage_timings'
+            assert params['run_id'] == f'in.({recent_id})'
             return [
-                {'id': recent_id, 'status': 'completed', 'created_at': now,
-                 'original_text': 'must not be returned'},
-                {'id': old_id, 'status': 'failed',
-                 'created_at': now - timedelta(days=31)},
+                {'run_id': recent_id, 'stage': 'evaluation_total', 'duration_ms': 2000,
+                 'created_at': now, 'status': 'completed', 'attempt_number': 1},
+                {'run_id': recent_id, 'stage': 'parse_resume', 'duration_ms': 500,
+                 'created_at': now, 'status': 'completed', 'attempt_number': 1},
             ]
 
     app.dependency_overrides[user] = lambda: uid
@@ -173,6 +181,9 @@ def test_member_dashboard_lists_only_the_authenticated_users_recent_runs():
         assert result['scope']['mode'] == 'account'
         assert result['summary']['run_count'] == 1
         assert [run['id'] for run in result['runs']] == [recent_id]
+        assert result['summary']['avg_total_ms'] == 2000
+        assert result['runs'][0]['stages'][0]['stage'] == 'evaluation_total'
+        assert result['stages'][0]['stage'] == 'evaluation_total'
         assert 'original_text' not in response.text
     finally:
         app.dependency_overrides.clear()
@@ -184,9 +195,11 @@ def test_legacy_local_data_member_dashboard_alias_reads_authenticated_database_r
 
     class FakeDB:
         async def select(self, table, **params):
-            assert table == 'evaluation_runs'
-            assert params['user_id'] == f'eq.{uid}'
-            return [{'id': run_id, 'status': 'completed', 'created_at': now}]
+            if table == 'evaluation_runs':
+                assert params['user_id'] == f'eq.{uid}'
+                return [{'id': run_id, 'status': 'completed', 'created_at': now}]
+            assert table == 'evaluation_stage_timings'
+            return []
 
     app.dependency_overrides[user] = lambda: uid
     try:
@@ -210,14 +223,16 @@ def test_legacy_admin_dashboard_path_returns_only_the_authenticated_members_runs
 
     class FakeDB:
         async def select(self, table, **params):
-            assert table == 'evaluation_runs'
-            assert params == {
-                'user_id': f'eq.{uid}',
-                'select': 'id,status,created_at,started_at,completed_at',
-                'order': 'created_at.desc',
-                'limit': 100,
-            }
-            return [{'id': run_id, 'status': 'completed', 'created_at': now}]
+            if table == 'evaluation_runs':
+                assert params == {
+                    'user_id': f'eq.{uid}',
+                    'select': 'id,status,created_at,started_at,completed_at',
+                    'order': 'created_at.desc',
+                    'limit': 100,
+                }
+                return [{'id': run_id, 'status': 'completed', 'created_at': now}]
+            assert table == 'evaluation_stage_timings'
+            return []
 
         async def rpc(self, *_args, **_kwargs):
             pytest.fail('Member dashboard must not call the administrator aggregate')
@@ -243,15 +258,51 @@ def test_member_dashboard_detail_uses_existing_run_ownership_check():
 
     class FakeDB:
         async def select(self, table, **params):
-            assert table == 'evaluation_runs'
-            assert params == {'id': f'eq.{run_id}', 'user_id': f'eq.{uid}', 'limit': 1}
-            return [{
-                'id': run_id,
-                'status': 'completed',
-                'created_at': datetime.now(timezone.utc),
-                'original_text': 'must not be returned',
-                'failure_reason': 'private diagnostic',
-            }]
+            if table == 'evaluation_runs':
+                assert params == {'id': f'eq.{run_id}', 'user_id': f'eq.{uid}', 'limit': 1}
+                return [{
+                    'id': run_id,
+                    'status': 'completed',
+                    'created_at': datetime.now(timezone.utc),
+                    'model_name': 'model-fixture',
+                    'original_text': 'must not be returned',
+                    'failure_reason': 'private diagnostic',
+                }]
+            if table == 'evaluation_input_snapshots':
+                return [{
+                    'resume_id': str(uuid4()), 'job_posting_id': str(uuid4()),
+                    'resume_version': 3, 'resume_hash': 'resume-hash',
+                    'job_hash': 'job-hash', 'snapshot_hash': 'combined-hash',
+                    'model_config_snapshot': {'model': 'model-fixture'},
+                    'prompt_config_snapshot': {'version': 'prompt-v1'},
+                    'input_manifest': {},
+                }]
+            if table in {'evaluation_stage_timings', 'node_executions', 'validation_issues'}:
+                return []
+            if table == 'criterion_results':
+                return [{
+                    'criterion_id': 'criterion-fixture-id',
+                    'score': Decimal('85.5'), 'verdict': 'met', 'evidence': [{'quote': 'private'}],
+                    'validation_status': 'passed', 'attempt_count': 1,
+                    'evaluation_criteria': {'criterion_code': 'A1', 'weight': Decimal('0.4')},
+                }]
+            if table == 'match_results':
+                return [{
+                    'id': 'match-fixture-id',
+                    'resume_completeness': Decimal('80'), 'job_fit': Decimal('85'),
+                    'qualifications': Decimal('90'), 'practical_competitiveness': Decimal('75'),
+                    'overall_score': Decimal('82.5'), 'eligibility_status': 'met',
+                    'validation_status': 'passed',
+                }]
+            if table == 'analysis_reports':
+                assert params['match_result_id'] == 'eq.match-fixture-id'
+                return [{
+                    'id': 'report-fixture-id', 'status': 'completed',
+                    'report_text': '# private report', 'created_at': datetime.now(timezone.utc),
+                }]
+            if table in {'evaluation_events', 'intermediate_artifacts'}:
+                return []
+            raise AssertionError(f'Unexpected table: {table}')
 
     app.dependency_overrides[user] = lambda: uid
     try:
@@ -265,9 +316,13 @@ def test_member_dashboard_detail_uses_existing_run_ownership_check():
         assert response.status_code == 200
         result = response.json()
         assert result['run']['id'] == str(run_id)
-        assert result['run']['availability']['llm']['status'] == 'unsupported'
+        assert result['run']['availability']['input']['status'] == 'available'
+        assert result['run']['scores']['criteria'][0]['score'] == 85.5
+        assert result['run']['persistence']['report_count'] == 1
         assert 'original_text' not in response.text
         assert 'private diagnostic' not in response.text
+        assert 'private report' not in response.text
+        assert 'private' not in response.text
     finally:
         app.dependency_overrides.clear()
 

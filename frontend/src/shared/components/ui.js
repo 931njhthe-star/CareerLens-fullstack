@@ -190,7 +190,7 @@ function renderAccountMenu(user) {
     ? `
         ${user.demo ? '<span class="badge">시연 계정</span>' : ''}
         <span class="account-name">${escapeHtml(user.name)} 님</span>
-        <a class="button secondary compact" href="#/mypage">마이페이지</a>
+        <a class="button primary compact account-menu__mypage" href="#/mypage">마이페이지</a>
         <button
           type="button"
           id="logout"

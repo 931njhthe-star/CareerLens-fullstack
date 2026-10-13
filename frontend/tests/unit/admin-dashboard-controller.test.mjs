@@ -47,7 +47,7 @@ function harness() {
 test('selected detail responses cannot cross selections, close, or disposal', async () => {
   const h = harness(), pending = [];
   const cleanup = mountAdminDashboard(h.root, { window: h.windowObject, api: async (path, options) => {
-    if (path.startsWith('/evaluations?')) return summary();
+    if (path.startsWith('/member/evaluation-performance?')) return summary();
     return new Promise((resolve) => pending.push({ path, resolve, signal: options.signal }));
   } });
   await tick();
@@ -74,7 +74,7 @@ test('missing detail refreshes the summary so deleted executions disappear', asy
   const h = harness();
   let count = 0;
   const cleanup = mountAdminDashboard(h.root, { window: h.windowObject, api: async (path) => {
-    if (path.startsWith('/evaluations?')) return ++count === 1 ? summary() : summary(['run-b']);
+    if (path.startsWith('/member/evaluation-performance?')) return ++count === 1 ? summary() : summary(['run-b']);
     throw { status: 404 };
   } });
   await tick();
@@ -118,7 +118,7 @@ test('visible periodic/focus refresh updates totals and stops while hidden or di
 test('an older server without detail support does not make an existing run look deleted', async () => {
   const h = harness();
   const cleanup = mountAdminDashboard(h.root, { window: h.windowObject, api: async (path) => {
-    if (path.startsWith('/evaluations?')) return summary();
+    if (path.startsWith('/member/evaluation-performance?')) return summary();
     throw { status: 404 };
   } });
   await tick();
@@ -137,10 +137,11 @@ test('dashboard summary and detail use existing authenticated database routes wi
   const calls = [];
   globalThis.fetch = async (url, options) => { calls.push({ url, options }); return Response.json({}); };
   try {
-    await api('/evaluations?limit=100&offset=0');
+    await api('/member/evaluation-performance?days=30&run_limit=100');
     await api('/evaluations/11111111-1111-4111-8111-111111111111');
+    await api('/member/evaluation-performance/11111111-1111-4111-8111-111111111111');
     await api('/evaluations/11111111-1111-4111-8111-111111111111/execution-report');
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
     for (const { options } of calls) {
       assert.equal(options.cache, 'no-store');
       assert.equal(options.headers.Authorization, 'Bearer private-fixture');
@@ -157,8 +158,8 @@ test('selected execution can open the exact stored report source in the dashboar
     window: h.windowObject,
     api: async (path) => {
       calls.push(path);
-      if (path.startsWith('/evaluations?')) return summary([runId]);
-      if (path === `/evaluations/${runId}`) return { id: runId, status: 'completed' };
+      if (path.startsWith('/member/evaluation-performance?')) return summary([runId]);
+      if (path === `/member/evaluation-performance/${runId}`) return { run: { id: runId, status: 'completed' } };
       if (path === `/evaluations/${runId}/execution-report`) return { run_id: runId, markdown };
       throw new Error(`Unexpected request: ${path}`);
     },
@@ -174,6 +175,10 @@ test('selected execution can open the exact stored report source in the dashboar
     h.content.innerHTML.indexOf('data-admin-execution-report') >
       h.content.innerHTML.indexOf('id="admin-detail-evidence"'),
     'the report button should appear below the test-evidence section',
+  );
+  assert.match(
+    h.content.innerHTML,
+    /class="button primary admin-dashboard__report-button" data-admin-execution-report/,
   );
   assert.match(h.content.innerHTML, /# 실행 기록\n\n원문 그대로/);
   assert.match(h.content.innerHTML, /&lt;값&gt;/);
