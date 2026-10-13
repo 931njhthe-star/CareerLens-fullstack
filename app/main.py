@@ -82,4 +82,4 @@ async def healthz():
 
 # Keep API, docs, and health routes ahead of the frontend fallback.
 # Both applications share the same process and Render URL; no HTTP proxy loop.
-app.mount('/', WSGIMiddleware(create_frontend_app(backend_url='', integrated=True)), name='frontend')
+app.mount('/', WSGIMiddleware(create_frontend_app(backend_url='')), name='frontend')

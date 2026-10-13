@@ -12,7 +12,7 @@ import server
 def test_frontend_server_imports_as_backend_package():
     root = Path(__file__).resolve().parents[2]
     subprocess.run(
-        [sys.executable, "-c", "from frontend.server import create_app"],
+        [sys.executable, "-c", "from app.main import app; assert app"],
         cwd=root,
         check=True,
         capture_output=True,
