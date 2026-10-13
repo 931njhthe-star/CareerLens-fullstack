@@ -379,6 +379,27 @@
   border-radius: var(--admin-radius);
   background: var(--admin-surface);
 }
+.admin-dashboard__execution-report {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--admin-line);
+}
+.admin-dashboard__execution-report-content {
+  margin-top: 16px;
+}
+.admin-dashboard__execution-report-source {
+  max-height: 70vh;
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  background: var(--admin-surface-soft);
+  color: var(--admin-ink);
+  font: 12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 #admin-selected-run {
   scroll-margin-top: 100px;
 }

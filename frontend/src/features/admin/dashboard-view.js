@@ -172,7 +172,14 @@ function llmView(run) {
     missing('요청 해시는 개별 LLM 호출에 보낸 지시문과 입력을 구분합니다. 프롬프트 본문 해시는 지시문만, JSON 출력 스키마 해시는 응답 형식만 비교합니다. 입력 구성 해시·버전 번호·출력 자료형 이름과는 각각 다릅니다. 계측 추가 이전 호출의 본문·스키마 해시는 기록 없음으로 표시합니다.') + sectionNotice(run, 'llm', '위 사용량은 저장된 호출 기록에 근거합니다.');
 }
 
-export function renderRunDetail(run, { loading = false, error = false } = {}) {
+export function renderRunDetail(run, {
+  loading = false,
+  error = false,
+  reportOpen = false,
+  reportLoading = false,
+  reportError = false,
+  reportMarkdown = null,
+} = {}) {
   if (!run) return '';
   const detail = (id, title, body, open = false) => `<details id="admin-detail-${id}" class="admin-dashboard__detail-section" ${open ? 'open' : ''}><summary>${e(title)}</summary><div>${body}</div></details>`;
   const header = `<header class="admin-dashboard__detail-heading"><div><p class="admin-dashboard__eyebrow">선택한 실행</p><h2 id="admin-detail-title" tabindex="-1">실행 상세</h2><p class="admin-dashboard__code">${text(run.id)}</p><p>${badge(run.status)} <span>${formatTime(run.created_at)}</span></p></div><button type="button" class="button secondary compact" data-admin-close>상세 닫기</button></header>`;
@@ -180,7 +187,12 @@ export function renderRunDetail(run, { loading = false, error = false } = {}) {
   if (loading) body = '<p class="admin-dashboard__missing" role="status">선택한 실행의 저장 기록을 불러오는 중입니다.</p>';
   else if (error) body = `<div class="admin-dashboard__feedback" role="alert"><p>${error === 'not_found' ? '실행 목록에는 있지만 상세 API에서 기록이 제공되지 않습니다. 서버가 최신 버전인지 확인하고 다시 불러와 주세요.' : '상세 조회 실패 · 저장 기록을 불러오지 못했습니다.'}</p><button class="button secondary" type="button" data-admin-detail-retry>상세 다시 불러오기</button></div>`;
   else body = detail('input', '입력·재현', inputView(run), true) + detail('nodes', '단계·노드·도구·기억', nodesView(run)) + detail('validation', '검증·재시도', validationView(run)) + detail('scores', '점수·보고서 저장', scoreTable(run) + persistenceView(run)) + detail('llm', 'LLM 사용량·요청 해시', llmView(run)) + detail('evidence', '시험 증거', sectionNotice(run, 'test_evidence', '실행에 연결된 시험 증거 기록 없음 · 운영 실행 완료와 시험 통과는 별개입니다.'));
-  return `<aside class="admin-dashboard__detail" aria-labelledby="admin-detail-title" aria-busy="${loading}">${header}${body}</aside>`;
+  const report = `<section class="admin-dashboard__execution-report"><button type="button" class="button secondary" data-admin-execution-report aria-expanded="${reportOpen}">${reportOpen ? '실행 기록 원문 닫기' : '실행 기록 원문 보기'}</button>${reportOpen ? `<div class="admin-dashboard__execution-report-content" role="region" aria-label="평가 실행 기록 원문" aria-busy="${reportLoading}">${reportLoading
+    ? '<p class="admin-dashboard__missing" role="status">실행 기록 원문을 불러오는 중입니다.</p>'
+    : reportError
+      ? `<div class="admin-dashboard__feedback" role="alert"><p>${reportError === 'missing' ? '이 실행에는 저장된 실행 기록 원문이 없습니다.' : '실행 기록 원문을 불러오지 못했습니다.'}</p><button class="button secondary" type="button" data-admin-execution-report-retry>다시 시도</button></div>`
+      : `<pre class="admin-dashboard__execution-report-source">${e(reportMarkdown)}</pre>`}</div>` : ''}</section>`;
+  return `<aside class="admin-dashboard__detail" aria-labelledby="admin-detail-title" aria-busy="${loading}">${header}${body}${report}</aside>`;
 }
 
 function listView(data, status, selectedIndex) {
@@ -193,7 +205,18 @@ function listView(data, status, selectedIndex) {
   }));
 }
 
-export function renderPerformanceView(data, { days = 30, status = 'all', selectedIndex = -1, detailLoading = false, detailError = false, updatedAt = null } = {}) {
+export function renderPerformanceView(data, {
+  days = 30,
+  status = 'all',
+  selectedIndex = -1,
+  detailLoading = false,
+  detailError = false,
+  reportOpen = false,
+  reportLoading = false,
+  reportError = false,
+  reportMarkdown = null,
+  updatedAt = null,
+} = {}) {
   const counts = overviewCounts(data.runs);
   const scope = data.scope || {};
   const scopeDescription = scope.mode === 'account' ? '현재 로그인한 계정의 평가 실행 기록입니다.'
@@ -201,7 +224,7 @@ export function renderPerformanceView(data, { days = 30, status = 'all', selecte
       : '서버가 반환한 평가 실행 기록입니다. 계정 범위는 제공되지 않았습니다.';
   const selected = data.runs[selectedIndex];
   const filteredCount = filterRuns(data.runs, status).length;
-  return `${overviewCards(data)}<div class="admin-dashboard__scope"><p>${scopeDescription} 마이페이지에 저장된 개인 보고서 개수가 아닙니다.</p><p>최근 ${days}일 · 최근 최대 ${RUN_LIMIT}건 요청 · 현재 응답 표본 ${data.runs.length}건 · 목록 필터 결과 ${filteredCount}건. 상태 카드는 필터와 무관하게 조회 표본을 집계합니다.${counts.other ? ` 알려지지 않은 상태 ${counts.other}건은 별도입니다.` : ''}</p><p>서버 집계 ${formatCount(data.summary.run_count)} · 마지막 조회 ${formatTime(updatedAt || data.generated_at)} · 60초마다·화면 복귀 시 자동 갱신${scope.total_runs !== undefined ? ` · 기간 내 전체 실행 ${formatCount(scope.total_runs)}` : ''}</p></div>${panel('runs', '01 / EXECUTIONS', '실행 현황·목록', '실행을 선택하면 저장된 상세 기록을 조회합니다. 완료·확인 필요는 진행 중 상태가 아닙니다.', listView(data, status, selectedIndex))}<div id="admin-selected-run">${renderRunDetail(selected, { loading: detailLoading, error: detailError })}</div>${panel('timing', '02 / PERFORMANCE', '단계별 소요 시간', '입력 파싱부터 보고서 저장까지의 서버 집계입니다. 병렬 단계의 합은 전체 실행 시간과 다를 수 있습니다.', facts([['서버 성능 집계 실행 수', formatCount(data.summary.run_count)], ['평균 전체 소요', formatDuration(data.summary.avg_total_ms)], ['P95 전체 소요', formatDuration(data.summary.p95_total_ms)]]) + aggregateStages(data.stages) + missing('선택 기간의 최근 실행 표본에 저장된 계측 기록을 집계합니다. 단계 표본 수에는 재시도 기록도 포함됩니다. P50은 중앙값, P95는 측정값 95%가 이 값 이하인 시간입니다. 막대는 평균 시간의 상대 길이이며 진행률이 아닙니다.'))}`;
+  return `${overviewCards(data)}<div class="admin-dashboard__scope"><p>${scopeDescription} 마이페이지에 저장된 개인 보고서 개수가 아닙니다.</p><p>최근 ${days}일 · 최근 최대 ${RUN_LIMIT}건 요청 · 현재 응답 표본 ${data.runs.length}건 · 목록 필터 결과 ${filteredCount}건. 상태 카드는 필터와 무관하게 조회 표본을 집계합니다.${counts.other ? ` 알려지지 않은 상태 ${counts.other}건은 별도입니다.` : ''}</p><p>서버 집계 ${formatCount(data.summary.run_count)} · 마지막 조회 ${formatTime(updatedAt || data.generated_at)} · 60초마다·화면 복귀 시 자동 갱신${scope.total_runs !== undefined ? ` · 기간 내 전체 실행 ${formatCount(scope.total_runs)}` : ''}</p></div>${panel('runs', '01 / EXECUTIONS', '실행 현황·목록', '실행을 선택하면 저장된 상세 기록을 조회합니다. 완료·확인 필요는 진행 중 상태가 아닙니다.', listView(data, status, selectedIndex))}<div id="admin-selected-run">${renderRunDetail(selected, { loading: detailLoading, error: detailError, reportOpen, reportLoading, reportError, reportMarkdown })}</div>${panel('timing', '02 / PERFORMANCE', '단계별 소요 시간', '입력 파싱부터 보고서 저장까지의 서버 집계입니다. 병렬 단계의 합은 전체 실행 시간과 다를 수 있습니다.', facts([['서버 성능 집계 실행 수', formatCount(data.summary.run_count)], ['평균 전체 소요', formatDuration(data.summary.avg_total_ms)], ['P95 전체 소요', formatDuration(data.summary.p95_total_ms)]]) + aggregateStages(data.stages) + missing('선택 기간의 최근 실행 표본에 저장된 계측 기록을 집계합니다. 단계 표본 수에는 재시도 기록도 포함됩니다. P50은 중앙값, P95는 측정값 95%가 이 값 이하인 시간입니다. 막대는 평균 시간의 상대 길이이며 진행률이 아닙니다.'))}`;
 }
 
 export function renderLoadingView() {

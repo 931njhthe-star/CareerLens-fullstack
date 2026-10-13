@@ -208,11 +208,14 @@ test('dashboard evaluation list and detail requests reach the authenticated back
   const runs = await backendApi('/evaluations?limit=100&offset=0', {}, request, ApiError);
   const runId = '11111111-1111-4111-8111-111111111111';
   const run = await backendApi(`/evaluations/${runId}`, {}, request, ApiError);
+  const report = await backendApi(`/evaluations/${runId}/execution-report`, {}, request, ApiError);
   assert.equal(runs[0].id, 'run-1');
   assert.equal(run.id, 'run-1');
+  assert.equal(report.id, 'run-1');
   assert.deepEqual(calls.map(({ path }) => path), [
     '/evaluations?limit=100&offset=0',
     `/evaluations/${runId}`,
+    `/evaluations/${runId}/execution-report`,
   ]);
 });
 

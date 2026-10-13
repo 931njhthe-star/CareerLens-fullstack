@@ -1575,6 +1575,11 @@ export async function backendApi(path, options, request, ApiError) {
     request = ownerBoundRequest(request, signal).request;
     return request(path, { signal });
   }
+  if (/^\/evaluations\/[0-9a-f-]{36}\/execution-report$/i.test(cleanPath) && method === 'GET') {
+    requireReportSession(ApiError);
+    request = ownerBoundRequest(request, signal).request;
+    return request(path, { signal });
+  }
   if (cleanPath === '/account/reports' && method === 'GET')
     return savedReportList(path, request, signal, ApiError);
   const reportContext = /^\/account\/reports\/([^/]+)\/context$/.exec(cleanPath);

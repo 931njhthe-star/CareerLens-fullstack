@@ -139,10 +139,38 @@ test('dashboard summary and detail use existing authenticated database routes wi
   try {
     await api('/evaluations?limit=100&offset=0');
     await api('/evaluations/11111111-1111-4111-8111-111111111111');
-    assert.equal(calls.length, 2);
+    await api('/evaluations/11111111-1111-4111-8111-111111111111/execution-report');
+    assert.equal(calls.length, 3);
     for (const { options } of calls) {
       assert.equal(options.cache, 'no-store');
       assert.equal(options.headers.Authorization, 'Bearer private-fixture');
     }
   } finally { globalThis.fetch = originalFetch; globalThis.sessionStorage = originalStorage; }
+});
+
+test('selected execution can open the exact stored report source in the dashboard', async () => {
+  const h = harness();
+  const runId = '11111111-1111-4111-8111-111111111111';
+  const markdown = '# 실행 기록\n\n원문 그대로\n```json\n{"value":"<값>"}\n```\n';
+  const calls = [];
+  const cleanup = mountAdminDashboard(h.root, {
+    window: h.windowObject,
+    api: async (path) => {
+      calls.push(path);
+      if (path.startsWith('/evaluations?')) return summary([runId]);
+      if (path === `/evaluations/${runId}`) return { id: runId, status: 'completed' };
+      if (path === `/evaluations/${runId}/execution-report`) return { run_id: runId, markdown };
+      throw new Error(`Unexpected request: ${path}`);
+    },
+  });
+  await tick();
+  h.click('[data-admin-row]', { adminRow: '0' });
+  await tick();
+  h.click('[data-admin-execution-report]');
+  await tick();
+  assert.ok(calls.includes(`/evaluations/${runId}/execution-report`));
+  assert.match(h.content.innerHTML, /# 실행 기록\n\n원문 그대로/);
+  assert.match(h.content.innerHTML, /&lt;값&gt;/);
+  assert.doesNotMatch(h.content.innerHTML, /<pre[^>]*>[^<]*<값>/);
+  cleanup();
 });

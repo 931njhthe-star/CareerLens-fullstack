@@ -272,6 +272,40 @@ def test_member_dashboard_detail_uses_existing_run_ownership_check():
         app.dependency_overrides.clear()
 
 
+def test_execution_report_returns_stored_markdown_only_after_run_ownership_check():
+    uid, run_id = str(uuid4()), uuid4()
+    markdown = '# 실행 기록\n\n| 내용 |\n|---|\n\n```json\n{"value": "<원문>"}\n```\n'
+
+    class FakeDB:
+        async def select(self, table, **params):
+            if table == 'evaluation_runs':
+                assert params == {'id': f'eq.{run_id}', 'user_id': f'eq.{uid}', 'limit': 1}
+                return [{'id': run_id, 'user_id': uid}]
+            assert table == 'intermediate_artifacts'
+            assert params == {
+                'run_id': f'eq.{run_id}',
+                'artifact_type': 'eq.execution_report',
+                'select': 'content',
+                'order': 'created_at.desc',
+                'limit': 1,
+            }
+            return [{'content': {'markdown': markdown, 'run_id': str(run_id)}}]
+
+    app.dependency_overrides[user] = lambda: uid
+    try:
+        with TestClient(app) as client:
+            original_db = app.state.db
+            try:
+                app.state.db = FakeDB()
+                response = client.get(f'/api/v1/evaluations/{run_id}/execution-report')
+            finally:
+                app.state.db = original_db
+        assert response.status_code == 200
+        assert response.json() == {'run_id': str(run_id), 'markdown': markdown}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_jobs_expose_markdown_source_identifiers_for_frontend_matching():
     class FakeDB:
         async def select(self, table, **params):

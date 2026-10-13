@@ -362,6 +362,29 @@ async def evaluation(run_id: UUID, request: Request, uid: str = Depends(user)):
     return jsonable_encoder({k: row.get(k) for k in ['id', 'status', 'current_stage', 'progress_percent', 'started_at', 'completed_at', 'failure_reason']})
 
 
+@router.get('/evaluations/{run_id}/execution-report', tags=['evaluations'])
+async def evaluation_execution_report(run_id: UUID, request: Request, uid: str = Depends(user)):
+    db, _, _ = services(request)
+    await owned(db, 'evaluation_runs', run_id, uid)
+    artifacts = await db.select(
+        'intermediate_artifacts',
+        run_id=f'eq.{run_id}',
+        artifact_type='eq.execution_report',
+        select='content',
+        order='created_at.desc',
+        limit=1,
+    )
+    if not artifacts:
+        raise HTTPException(404, '이 실행의 실행 기록 원문이 없습니다.')
+    content = artifacts[0].get('content')
+    if not isinstance(content, dict):
+        raise HTTPException(500, '저장된 실행 기록 원문 형식이 올바르지 않습니다.')
+    markdown = content.get('markdown')
+    if not isinstance(markdown, str):
+        raise HTTPException(500, '저장된 실행 기록 원문 형식이 올바르지 않습니다.')
+    return {'run_id': str(run_id), 'markdown': markdown}
+
+
 @router.get('/evaluations/{run_id}/progress', tags=['evaluations'])
 async def evaluation_progress(
     run_id: UUID,

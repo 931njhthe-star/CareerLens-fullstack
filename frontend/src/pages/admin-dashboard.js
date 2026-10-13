@@ -92,6 +92,12 @@ export function mountAdminDashboard(root, {
     detailRequest = null,
     detailLoading = false,
     detailError = false,
+    reportRequest = null,
+    reportGeneration = 0,
+    reportLoading = false,
+    reportError = false,
+    reportMarkdown = null,
+    reportOpen = false,
     updatedAt = null,
     lastLoadedAt = 0,
     loading = false,
@@ -99,6 +105,20 @@ export function mountAdminDashboard(root, {
     disposed = false,
     generation = 0;
   const disclosureStates = new Map();
+
+  function cancelExecutionReport() {
+    reportRequest?.abort();
+    reportRequest = null;
+    reportGeneration++;
+    reportLoading = false;
+  }
+
+  function resetExecutionReport() {
+    cancelExecutionReport();
+    reportError = false;
+    reportMarkdown = null;
+    reportOpen = false;
+  }
 
   function render() {
     if (disposed || !data) return;
@@ -110,7 +130,10 @@ export function mountAdminDashboard(root, {
     const existingDisclosures = [...(content.querySelectorAll?.('#admin-selected-run details') || [])];
     if (oldId && existingDisclosures.length) disclosureStates.set(oldId, existingDisclosures.map((item) => item.open));
     const disclosures = disclosureStates.get(selectedId) || [];
-    content.innerHTML = renderPerformanceView(data, { days, status, selectedIndex, detailLoading, detailError, updatedAt });
+    content.innerHTML = renderPerformanceView(data, {
+      days, status, selectedIndex, detailLoading, detailError, updatedAt,
+      reportOpen, reportLoading, reportError, reportMarkdown,
+    });
     const nextScroller = content.querySelector?.('#admin-runs .admin-dashboard__table-scroll');
     if (nextScroller) {
       nextScroller.scrollTop = listScrollTop;
@@ -133,9 +156,38 @@ export function mountAdminDashboard(root, {
     detailError = false;
   }
 
+  async function loadExecutionReport() {
+    const selectedId = data?.runs[selectedIndex]?.id;
+    cancelExecutionReport();
+    if (!selectedId || disposed) return;
+    reportRequest = new AbortController();
+    const current = ++reportGeneration;
+    reportLoading = true;
+    reportError = false;
+    render();
+    try {
+      const payload = await api(`/evaluations/${encodeURIComponent(selectedId)}/execution-report`, {
+        signal: reportRequest.signal,
+      });
+      if (disposed || current !== reportGeneration || data?.runs[selectedIndex]?.id !== selectedId) return;
+      if (payload?.run_id !== selectedId || typeof payload?.markdown !== 'string')
+        throw new Error('Invalid execution report response');
+      reportMarkdown = payload.markdown;
+      reportLoading = false;
+      render();
+    } catch (error) {
+      if (disposed || current !== reportGeneration || error?.name === 'AbortError') return;
+      reportLoading = false;
+      reportError = error?.status === 404 ? 'missing' : 'unavailable';
+      render();
+      announcement.textContent = '실행 기록 원문을 불러오지 못했습니다.';
+    }
+  }
+
   async function loadDetail() {
     const selectedId = data?.runs[selectedIndex]?.id;
     cancelDetail();
+    resetExecutionReport();
     if (!selectedId || disposed) return;
     detailRequest = new AbortController();
     const current = detailGeneration;
@@ -169,6 +221,7 @@ export function mountAdminDashboard(root, {
   async function load({ silent = false, refreshSelection = true, missingDetailId = null } = {}) {
     request?.abort();
     cancelDetail();
+    resetExecutionReport();
     request = new AbortController();
     const current = ++generation;
     const selectedId = data?.runs[selectedIndex]?.id;
@@ -230,6 +283,16 @@ export function mountAdminDashboard(root, {
       void loadDetail();
       return;
     }
+    if (target.closest('[data-admin-execution-report]')) {
+      reportOpen = !reportOpen;
+      if (reportOpen && reportMarkdown === null && !reportError) void loadExecutionReport();
+      else render();
+      return;
+    }
+    if (target.closest('[data-admin-execution-report-retry]')) {
+      void loadExecutionReport();
+      return;
+    }
     const section = target.closest('[data-admin-section]');
     if (section) {
       const id = section.dataset.adminSection;
@@ -245,6 +308,7 @@ export function mountAdminDashboard(root, {
     if (target.closest('[data-admin-close]')) {
       const previous = selectedIndex;
       cancelDetail();
+      resetExecutionReport();
       selectedIndex = -1;
       render();
       host.querySelector(`[data-admin-run="${previous}"]`)?.focus();
@@ -254,6 +318,7 @@ export function mountAdminDashboard(root, {
     if (!row || !data) return;
     const index = Number(row.dataset.adminRow);
     if (!Number.isInteger(index) || !data.runs[index]) return;
+    if (index !== selectedIndex) resetExecutionReport();
     selectedIndex = index;
     void loadDetail();
     host.querySelector('#admin-detail-title')?.focus({ preventScroll: true });
@@ -275,6 +340,7 @@ export function mountAdminDashboard(root, {
       status = next;
       if (data?.runs[selectedIndex] && !filterRuns([data.runs[selectedIndex]], status).length) {
         cancelDetail();
+        resetExecutionReport();
         selectedIndex = -1;
       }
       render();
@@ -295,6 +361,7 @@ export function mountAdminDashboard(root, {
     generation++;
     request?.abort();
     cancelDetail();
+    resetExecutionReport();
     if (timer !== undefined) windowObject?.clearInterval?.(timer);
     windowObject?.removeEventListener?.('focus', syncWhenVisible);
     windowObject?.document?.removeEventListener?.('visibilitychange', syncWhenVisible);
