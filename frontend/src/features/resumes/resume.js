@@ -15,17 +15,15 @@ export function resumeEditor(draft) {
         <div class="file-controls">
           <input
             id="resume-file"
+            class="file-input-visually-hidden"
             name="file"
             type="file"
             accept=".md"
             required
             aria-label="Markdown 이력서 파일 선택"
-            aria-describedby="file-hint" />
-          <button
-            type="submit"
-            class="button secondary">
-            파일 불러오기
-          </button>
+            aria-describedby="file-hint resume-file-status" />
+          <label class="button secondary file-picker" for="resume-file">파일 불러오기</label>
+          <span id="resume-file-status" class="file-caption" role="status">선택한 파일이 없습니다.</span>
         </div>
       </form>
       <form

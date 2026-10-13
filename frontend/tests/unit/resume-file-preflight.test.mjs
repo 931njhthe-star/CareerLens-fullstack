@@ -64,3 +64,11 @@ test('member and guest choosers advertise only Markdown while the member editor 
   assert.match(resumeEditor({ resume_text: '' }), /id="resume-text"/);
   assert.match(resumeEditor({ resume_text: '' }), /직접 붙여넣어도 좋아요/);
 });
+
+test('member resume picker uses a Korean file-loading label without a second submit button', () => {
+  const html = resumeEditor({ resume_text: '' });
+  const picker = html.slice(html.indexOf('<form'), html.indexOf('id="resume-form"'));
+  assert.match(html, /<label class="button secondary file-picker" for="resume-file">파일 불러오기<\/label>/);
+  assert.match(html, /id="resume-file-status" class="file-caption" role="status"/);
+  assert.doesNotMatch(picker, /type="submit"/);
+});

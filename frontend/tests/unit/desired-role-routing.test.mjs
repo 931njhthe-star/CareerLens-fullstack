@@ -51,6 +51,9 @@ function routeFixture({ member = false, draft = {}, edits = {} } = {}) {
     addEventListener(type, callback) {
       this.listeners.set(type, callback);
     },
+    requestSubmit() {
+      this.listeners.get('submit')?.({ preventDefault() {} });
+    },
     focus() {}, prepend() {},
     classList: { add() {} },
     querySelector: () => null,
@@ -250,6 +253,15 @@ function routeFixture({ member = false, draft = {}, edits = {} } = {}) {
       submit({ preventDefault() {} });
       await calls.pending;
     },
+    async selectResumeFile(file) {
+      const form = elements.get('upload-form');
+      const input = elements.get('resume-file');
+      assert.ok(form, 'resume upload form is rendered');
+      assert.ok(input, 'resume file picker is rendered');
+      form.testValues = new Map([['file', file]]);
+      input.listeners.get('change')?.({ target: { files: [file] } });
+      await calls.pending;
+    },
     async render(route = location.hash) {
       location.hash = route;
       // A real browser dispatches hashchange after navigate updates location.
@@ -263,6 +275,25 @@ function routeFixture({ member = false, draft = {}, edits = {} } = {}) {
     },
   };
 }
+
+test('choosing a member resume file loads it immediately without a second click', async () => {
+  const fixture = routeFixture({ member: true });
+  await fixture.render('#/resume');
+  fixture.setApi(async (path) => {
+    assert.equal(path, '/resume/upload');
+    return {
+      draft: { resume_text: '# Loaded resume\n\nMore than enough sample text.' },
+      questions: [],
+    };
+  });
+
+  await fixture.selectResumeFile(new File(['# Loaded resume\n\nMore than enough sample text.'], 'resume.md'));
+
+  assert.deepEqual(fixture.calls.api, ['/resume/upload']);
+  assert.match(fixture.markup, /<textarea[\s\S]*?# Loaded resume/);
+  assert.match(fixture.markup, /More than enough sample text\./);
+  assert.equal(fixture.snapshot().workspace.draft.resume_text, '# Loaded resume\n\nMore than enough sample text.');
+});
 
 function assertRolePage(fixture) {
   assert.equal(fixture.location.hash, '#/desired-role');

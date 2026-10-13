@@ -1410,6 +1410,12 @@ function bindAccount() {
 
 function bindWorkflow() {
   bindAccount();
+  document.getElementById('resume-file')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    document.getElementById('resume-file-status').textContent = `${file.name} 불러오는 중…`;
+    document.getElementById('upload-form')?.requestSubmit();
+  });
   document.getElementById('guest-resume-file')?.addEventListener('change', (event) => {
     try {
       guest.filename = guestFileMetadata(event.target.files?.[0]);
