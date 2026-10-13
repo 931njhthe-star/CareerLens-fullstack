@@ -649,7 +649,7 @@ def create_app(backend_url=None, *, integrated=False):
 
     @app.get("/public/<path:name>")
     def public(name):
-        if Path(name).suffix.lower() not in {".svg", ".png", ".jpg", ".ico", ".webp"}:
+        if Path(name).suffix.lower() not in {".svg", ".png", ".jpg", ".ico", ".webp", ".md"}:
             return "", 404
         return send_from_directory(ROOT / "public", name)
 

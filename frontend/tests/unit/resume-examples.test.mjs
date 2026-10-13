@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterResumeExamples } from '../../src/features/resumes/examples.js';
+import { readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { filterResumeExamples, parseResumeExample } from '../../src/features/resumes/examples.js';
+
+const examplesDirectory = fileURLToPath(
+  new URL('../../public/resume-examples/', import.meta.url),
+);
 
 const examples = Object.freeze([
   Object.freeze({
@@ -50,5 +56,30 @@ test('empty searches preserve catalog order and tolerate omitted optional fields
   assert.deepEqual(
     examples.map((item) => item.id),
     ['frontend', 'accounting', 'minimal'],
+  );
+});
+
+test('frontend catalog contains all 12 full resumes and parses searchable metadata', async () => {
+  const filenames = (await readdir(examplesDirectory)).sort();
+  assert.deepEqual(
+    filenames,
+    Array.from({ length: 12 }, (_, index) => `CV-${String(index + 1).padStart(3, '0')}.md`),
+  );
+
+  const items = await Promise.all(
+    filenames.map(async (filename) =>
+      parseResumeExample(
+        filename,
+        await readFile(new URL(`../../public/resume-examples/${filename}`, import.meta.url), 'utf8'),
+      ),
+    ),
+  );
+  assert.equal(new Set(items.map((item) => item.title)).size, 12);
+  assert.ok(items.every((item) => item.role && item.summary && item.skills.length));
+  assert.ok(items.every((item) => new TextEncoder().encode(item.resume_text).length > 2000));
+  assert.ok(items.some((item) => item.resume_text.includes('주요 구현')));
+  assert.deepEqual(
+    filterResumeExamples(items, 'LangGraph').map((item) => item.id),
+    ['CV-001', 'CV-007', 'CV-009'],
   );
 });

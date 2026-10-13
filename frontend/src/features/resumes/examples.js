@@ -1,9 +1,63 @@
-import { api } from '../../shared/api/client.js';
 import { publicErrorMessage } from '../../shared/api/error-messages.js';
 import { escapeHtml as e } from '../../shared/components/ui.js';
 
 const PAGE_SIZE = 12;
+const EXAMPLE_FILES = Array.from(
+  { length: 12 },
+  (_, index) => `CV-${String(index + 1).padStart(3, '0')}.md`,
+);
 let request;
+
+function markdownField(markdown, label) {
+  const row = markdown.match(new RegExp(`^\\|\\s*${label}\\s*\\|\\s*(.*?)\\s*\\|\\s*$`, 'm'));
+  return row?.[1]?.trim() || '';
+}
+
+export function parseResumeExample(filename, markdown) {
+  const id = /^CV-(\d{3})\.md$/.exec(filename)?.[1];
+  const name = markdownField(markdown, '이름');
+  const role = markdownField(markdown, '지원 직무') || markdownField(markdown, '직무 분야');
+  if (!id || !name || !role) throw new Error('가상 이력서 원문 형식을 확인할 수 없습니다.');
+
+  const competencies = markdown.split(/^## 핵심 역량\s*$/m)[1]?.split(/^## /m)[0] || '';
+  const summary = competencies
+    .split(/\r?\n/)
+    .map((line) => line.match(/^\s*-\s*(.+)$/)?.[1]?.trim())
+    .filter(Boolean)
+    .join(' · ');
+  const skillsSection = markdown.split(/^## 기술 및 활용 경험\s*$/m)[1]?.split(/^## /m)[0] || '';
+  const skills = skillsSection
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('|') && !/^\|\s*-/.test(line))
+    .slice(1)
+    .flatMap((line) => line.split('|')[1]?.split(/[·,，]/) || [])
+    .map((skill) => skill.trim())
+    .filter(Boolean);
+  const experience = [
+    markdownField(markdown, '지원 구분'),
+    markdownField(markdown, '기존 직무 경력'),
+  ].filter(Boolean);
+
+  return {
+    id: `CV-${id}`,
+    title: `${name} 이력서`,
+    role,
+    experience_level: experience.join(' · '),
+    summary,
+    skills: [...new Set(skills)],
+    resume_text: markdown,
+  };
+}
+
+async function loadResumeExamples(signal) {
+  return Promise.all(
+    EXAMPLE_FILES.map(async (filename) => {
+      const response = await fetch(`/public/resume-examples/${filename}`, { signal });
+      if (!response.ok) throw new Error('가상 이력서 파일을 불러오지 못했습니다.');
+      return parseResumeExample(filename, await response.text());
+    }),
+  );
+}
 
 export function stopResumeExamples() {
   request?.abort();
@@ -138,9 +192,8 @@ export function bindResumeExamples({ hasContent, onSelect, onError }) {
       button.disabled = true;
     });
     try {
-      const { example } = await api(`/resume-examples/${encodeURIComponent(exampleId)}`, {
-        signal: controller.signal,
-      });
+      const example = items.find((item) => item.id === exampleId);
+      if (!example) throw new Error('선택한 가상 이력서를 찾을 수 없습니다.');
       if (current()) await onSelect(example);
     } catch (error) {
       if (current() && error.name !== 'AbortError') await onError(error);
@@ -158,9 +211,9 @@ export function bindResumeExamples({ hasContent, onSelect, onError }) {
     loading = true;
     list.innerHTML = '<p class="input-hint" role="status">가상 이력서를 불러오는 중…</p>';
     try {
-      const result = await api('/resume-examples', { signal: controller.signal });
+      const result = await loadResumeExamples(controller.signal);
       if (!current()) return;
-      items = result.items;
+      items = result;
       filtered = items;
       loaded = true;
       list.innerHTML = `

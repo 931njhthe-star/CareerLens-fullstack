@@ -96,6 +96,13 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json["error"]["code"], "backend_unavailable")
 
+    def test_public_resume_markdown_assets_are_served(self):
+        with self.app().test_client() as client:
+            response = client.get("/public/resume-examples/CV-001.md")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("김서윤".encode(), response.data)
+            self.assertEqual(client.get("/public/resume-examples/CV-001.txt").status_code, 404)
+
     def test_proxy_keeps_csrf_origin_cookie_and_uses_api_host(self):
         opener = Opener()
         with self.app("https://api.example.com", opener).test_client() as client:
