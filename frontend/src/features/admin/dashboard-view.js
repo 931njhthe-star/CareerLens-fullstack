@@ -43,7 +43,25 @@ const sectionNotice = (run, section, fallback) => {
   if (availability?.reason) return missing(availability.reason);
   return missing(fallback);
 };
-const criterion = (value) => text(value, '해당 없음');
+const CRITERIA = {
+  A1: ['이력서 완성도', '경험 설명의 구체성'],
+  A2: ['이력서 완성도', '성과 근거의 명확성'],
+  A3: ['이력서 완성도', '구성과 가독성'],
+  B1: ['직무 적합도', '핵심 기술 일치도'],
+  B2: ['직무 적합도', '담당 업무 연관성'],
+  B3: ['직무 적합도', '우대 역량 부합도'],
+  C1: ['지원 자격 충족도', '관련 경력 충족도'],
+  C2: ['지원 자격 충족도', '학력·전공 충족도'],
+  C3: ['지원 자격 충족도', '기타 필수조건 충족도'],
+  D1: ['실무 경쟁력', '업무 규모·난도 경쟁력'],
+  D2: ['실무 경쟁력', '운영·문제 해결 경쟁력'],
+  D3: ['실무 경쟁력', '역할·책임 수준 경쟁력'],
+};
+const criterion = (value) => {
+  const details = CRITERIA[value];
+  if (!details) return text(value, '해당 없음');
+  return `<span class="admin-dashboard__criterion"><strong>${value}</strong><span><span class="admin-dashboard__criterion-domain">${details[0]}</span><span>${details[1]}</span></span></span>`;
+};
 const attempt = (value) => measuredCount(value) === null ? '기록 없음' : String(value);
 const verdict = (value) => text({ met: '충족', not_met: '미충족', unknown: '판정 보류', not_applicable: '해당 없음' }[value] || value);
 const accountScopeLabel = (data) => data?.scope?.mode === 'account' ? '현재 계정'
@@ -138,7 +156,7 @@ function scoreTable(run) {
   if (!criteria.length) return domains + sectionNotice(run, 'scores', '점수 기록 없음 · 실행 상태나 시간으로 점수를 추정하지 않습니다.');
   return domains + table('저장된 기준별 점수', ['평가 기준', numberHeading('DB 원점수'), numberHeading('화면 표시 · 반올림'), '판정', numberHeading('근거 수')], criteria.map((item) => {
     const score = Object.hasOwn(item, 'score') ? item.score : item.raw_score;
-    return `<tr><th scope="row">${text(item.criterion_code ?? item.code)}</th><td class="numeric">${scoreDisplay(score)}</td><td class="numeric">${scoreDisplay(score, { rounded: true })}</td><td>${verdict(item.verdict)}</td><td class="numeric">${formatCount(item.evidence_count)}</td></tr>`;
+    return `<tr><th scope="row">${criterion(item.criterion_code ?? item.code)}</th><td class="numeric">${scoreDisplay(score)}</td><td class="numeric">${scoreDisplay(score, { rounded: true })}</td><td>${verdict(item.verdict)}</td><td class="numeric">${formatCount(item.evidence_count)}</td></tr>`;
   })) + missing('원점수는 저장된 값 그대로이며 화면 표시만 반올림합니다. 점수 없음은 0점이 아닙니다. 공개 대시보드에서는 이력서·공고의 근거 원문을 표시하지 않습니다.');
 }
 

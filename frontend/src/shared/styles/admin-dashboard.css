@@ -489,6 +489,39 @@
   min-width: 0;
   padding: 8px 0 24px;
 }
+.admin-dashboard__criterion {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 190px;
+}
+.admin-dashboard__criterion > strong {
+  display: inline-grid;
+  flex: 0 0 36px;
+  min-height: 30px;
+  place-items: center;
+  border: 1px solid #bfd2f3;
+  border-radius: 7px;
+  background: #edf4ff;
+  color: #174d9b;
+  font-size: 12px;
+  line-height: 1;
+}
+.admin-dashboard__criterion > span {
+  display: grid;
+  gap: 2px;
+  line-height: 1.45;
+}
+.admin-dashboard__criterion-domain {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.admin-dashboard__criterion > span > span:last-child {
+  color: var(--admin-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
 .admin-dashboard__scope p {
   margin: 4px 0;
 }

@@ -300,6 +300,9 @@ test('rich stored telemetry preserves raw score, rounding, zero, cost and report
     ]),
   ).runs[0];
   const detail = renderRunDetail(run);
+  assert.match(detail, /<strong>A1<\/strong>.*이력서 완성도.*경험 설명의 구체성/s);
+  assert.match(detail, /<strong>C1<\/strong>.*지원 자격 충족도.*관련 경력 충족도/s);
+  assert.match(detail, /<strong>D1<\/strong>.*실무 경쟁력.*업무 규모·난도 경쟁력/s);
   assert.match(detail, /48\.3<\/td><td class="numeric">48<\/td><td>충족/);
   assert.match(detail, /0<\/td><td class="numeric">0<\/td><td>미충족/);
   assert.match(detail, /점수 없음<\/td><td class="numeric">점수 없음<\/td><td>판정 보류/);
@@ -546,10 +549,35 @@ test('stage attempts are actual server values and whole-document parsing has no 
     { stage: 'criterion_evaluation', criterion_code: 'A1', attempt_number: 3, status: 'completed', duration_ms: 0 },
   ] });
   assert.match(markup, /이력서 구조화<\/span><span class="admin-dashboard__code">parse_resume<\/span><\/th><td>해당 없음<\/td><td class="numeric">1/);
-  assert.match(markup, /A1<\/td><td class="numeric">3/);
+  assert.match(markup, /<strong>A1<\/strong>.*이력서 완성도.*경험 설명의 구체성.*<\/span><\/td><td class="numeric">3/s);
   assert.match(markup, /<th scope="col" class="numeric">시도<\/th>/);
   assert.match(markup, /<th scope="col" class="numeric">소요 시간<\/th>/);
   assert.doesNotMatch(markup, /미수집/);
+});
+
+test('all A1-D3 criterion codes display their evaluation domain and matching subcriterion', () => {
+  const mapping = [
+    ['A1', '이력서 완성도', '경험 설명의 구체성'],
+    ['A2', '이력서 완성도', '성과 근거의 명확성'],
+    ['A3', '이력서 완성도', '구성과 가독성'],
+    ['B1', '직무 적합도', '핵심 기술 일치도'],
+    ['B2', '직무 적합도', '담당 업무 연관성'],
+    ['B3', '직무 적합도', '우대 역량 부합도'],
+    ['C1', '지원 자격 충족도', '관련 경력 충족도'],
+    ['C2', '지원 자격 충족도', '학력·전공 충족도'],
+    ['C3', '지원 자격 충족도', '기타 필수조건 충족도'],
+    ['D1', '실무 경쟁력', '업무 규모·난도 경쟁력'],
+    ['D2', '실무 경쟁력', '운영·문제 해결 경쟁력'],
+    ['D3', '실무 경쟁력', '역할·책임 수준 경쟁력'],
+  ];
+  const markup = renderRunDetail({
+    id: 'run',
+    scores: { criteria: mapping.map(([criterion_code]) => ({ criterion_code, score: 80 })) },
+  });
+
+  for (const [code, domain, subcriterion] of mapping) {
+    assert.match(markup, new RegExp(`<strong>${code}<\\/strong>.*${domain}.*${subcriterion}`, 's'));
+  }
 });
 
 test('input composition, prompt versions and per-call hashes remain distinct with zero tokens', () => {
@@ -639,5 +667,6 @@ test('technical names have Korean explanations and missing node duration is not 
   });
   for (const label of ['A1 기준 평가', '벡터 검색', '평가 영역 간 판단 충돌', '재검증 중', '독립 평가', '노드 완료 기록만 저장']) assert.ok(markup.includes(label));
   for (const technicalName of ['evaluate_A1', 'vector_search', 'cross_domain_conflict', 'independent_evaluation']) assert.ok(markup.includes(`<span class="admin-dashboard__code">${technicalName}</span>`));
-  assert.match(markup, /evaluate_A1<\/span><\/th><td>A1<\/td><td class="numeric">기록 없음<\/td><td>.*?<\/td><td class="numeric">미측정<\/td>/);
+  assert.match(markup, /evaluate_A1<\/span><\/th><td><span class="admin-dashboard__criterion"><strong>A1<\/strong>.*이력서 완성도.*경험 설명의 구체성/s);
+  assert.match(markup, /<\/span><\/span><\/td><td class="numeric">기록 없음<\/td><td>.*?<\/td><td class="numeric">미측정<\/td>/s);
 });
