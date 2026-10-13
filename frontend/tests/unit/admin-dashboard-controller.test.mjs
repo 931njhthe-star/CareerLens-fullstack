@@ -169,6 +169,12 @@ test('selected execution can open the exact stored report source in the dashboar
   h.click('[data-admin-execution-report]');
   await tick();
   assert.ok(calls.includes(`/evaluations/${runId}/execution-report`));
+  assert.match(h.content.innerHTML, /class="admin-dashboard__detail-actions">.*data-admin-execution-report[^>]*>테스트 보고서 닫기/s);
+  assert.ok(
+    h.content.innerHTML.indexOf('data-admin-execution-report') <
+      h.content.innerHTML.indexOf('id="admin-detail-input"'),
+    'the report button should appear in the detail header before the expandable detail sections',
+  );
   assert.match(h.content.innerHTML, /# 실행 기록\n\n원문 그대로/);
   assert.match(h.content.innerHTML, /&lt;값&gt;/);
   assert.doesNotMatch(h.content.innerHTML, /<pre[^>]*>[^<]*<값>/);

@@ -182,17 +182,17 @@ export function renderRunDetail(run, {
 } = {}) {
   if (!run) return '';
   const detail = (id, title, body, open = false) => `<details id="admin-detail-${id}" class="admin-dashboard__detail-section" ${open ? 'open' : ''}><summary>${e(title)}</summary><div>${body}</div></details>`;
-  const header = `<header class="admin-dashboard__detail-heading"><div><p class="admin-dashboard__eyebrow">선택한 실행</p><h2 id="admin-detail-title" tabindex="-1">실행 상세</h2><p class="admin-dashboard__code">${text(run.id)}</p><p>${badge(run.status)} <span>${formatTime(run.created_at)}</span></p></div><button type="button" class="button secondary compact" data-admin-close>상세 닫기</button></header>`;
+  const header = `<header class="admin-dashboard__detail-heading"><div><p class="admin-dashboard__eyebrow">선택한 실행</p><h2 id="admin-detail-title" tabindex="-1">실행 상세</h2><p class="admin-dashboard__code">${text(run.id)}</p><p>${badge(run.status)} <span>${formatTime(run.created_at)}</span></p></div><div class="admin-dashboard__detail-actions"><button type="button" class="button secondary compact" data-admin-execution-report aria-expanded="${reportOpen}">${reportOpen ? '테스트 보고서 닫기' : '테스트 보고서 보기'}</button><button type="button" class="button secondary compact" data-admin-close>상세 닫기</button></div></header>`;
   let body;
   if (loading) body = '<p class="admin-dashboard__missing" role="status">선택한 실행의 저장 기록을 불러오는 중입니다.</p>';
   else if (error) body = `<div class="admin-dashboard__feedback" role="alert"><p>${error === 'not_found' ? '실행 목록에는 있지만 상세 API에서 기록이 제공되지 않습니다. 서버가 최신 버전인지 확인하고 다시 불러와 주세요.' : '상세 조회 실패 · 저장 기록을 불러오지 못했습니다.'}</p><button class="button secondary" type="button" data-admin-detail-retry>상세 다시 불러오기</button></div>`;
   else body = detail('input', '입력·재현', inputView(run), true) + detail('nodes', '단계·노드·도구·기억', nodesView(run)) + detail('validation', '검증·재시도', validationView(run)) + detail('scores', '점수·보고서 저장', scoreTable(run) + persistenceView(run)) + detail('llm', 'LLM 사용량·요청 해시', llmView(run)) + detail('evidence', '시험 증거', sectionNotice(run, 'test_evidence', '실행에 연결된 시험 증거 기록 없음 · 운영 실행 완료와 시험 통과는 별개입니다.'));
-  const report = `<section class="admin-dashboard__execution-report"><button type="button" class="button secondary" data-admin-execution-report aria-expanded="${reportOpen}">${reportOpen ? '실행 기록 원문 닫기' : '실행 기록 원문 보기'}</button>${reportOpen ? `<div class="admin-dashboard__execution-report-content" role="region" aria-label="평가 실행 기록 원문" aria-busy="${reportLoading}">${reportLoading
+  const report = reportOpen ? `<section class="admin-dashboard__execution-report-content" role="region" aria-label="테스트 보고서 원문" aria-busy="${reportLoading}">${reportLoading
     ? '<p class="admin-dashboard__missing" role="status">실행 기록 원문을 불러오는 중입니다.</p>'
     : reportError
       ? `<div class="admin-dashboard__feedback" role="alert"><p>${reportError === 'missing' ? '이 실행에는 저장된 실행 기록 원문이 없습니다.' : '실행 기록 원문을 불러오지 못했습니다.'}</p><button class="button secondary" type="button" data-admin-execution-report-retry>다시 시도</button></div>`
-      : `<pre class="admin-dashboard__execution-report-source">${e(reportMarkdown)}</pre>`}</div>` : ''}</section>`;
-  return `<aside class="admin-dashboard__detail" aria-labelledby="admin-detail-title" aria-busy="${loading}">${header}${body}${report}</aside>`;
+      : `<pre class="admin-dashboard__execution-report-source">${e(reportMarkdown)}</pre>`}</section>` : '';
+  return `<aside class="admin-dashboard__detail" aria-labelledby="admin-detail-title" aria-busy="${loading}">${header}${report}${body}</aside>`;
 }
 
 function listView(data, status, selectedIndex) {
