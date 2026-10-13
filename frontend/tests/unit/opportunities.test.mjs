@@ -262,8 +262,13 @@ async function opportunityFixture({ selected = '', listRequest, detailRequest } 
   const requests = [];
   const evaluations = [];
   const errors = [];
+  const popupEvents = [];
   let selectedUrl = `#/${opportunityPath(route, route.page, selected)}`;
   const context = vm.createContext({
+    openFlowViewer: () => {
+      popupEvents.push('popup');
+      return {};
+    },
     recordFlowEvent: flow.record,
     publicErrorMessage,
     AbortController,
@@ -296,7 +301,10 @@ async function opportunityFixture({ selected = '', listRequest, detailRequest } 
       route,
       user: { id: 'member' },
       navigate: (path) => navigations.push(opportunityRoute(`#/${path}`)),
-      onSelect: async (posting) => evaluations.push(posting),
+      onSelect: async (posting) => {
+        popupEvents.push('select');
+        evaluations.push(posting);
+      },
       onError: (error) => errors.push(error),
     },
   });
@@ -308,6 +316,7 @@ async function opportunityFixture({ selected = '', listRequest, detailRequest } 
     requests,
     navigations,
     evaluations,
+    popupEvents,
     errors,
     get route() {
       return opportunityRoute(selectedUrl);
@@ -401,6 +410,15 @@ test('paging replaces only the list and retains detail DOM, scroll and evaluatio
   await fixture.apply();
   assert.equal(fixture.evaluations.at(-1).id, 'page-4-second');
   fixture.dispose();
+});
+
+test('confirming a selected opportunity opens the flow popup before starting the analysis', async () => {
+  const fixture = await opportunityFixture({ selected: 'selected-posting' });
+
+  await fixture.apply();
+
+  assert.deepEqual(fixture.popupEvents, ['popup', 'select']);
+  assert.equal(fixture.evaluations[0].id, 'selected-posting');
 });
 
 test('scope changes reset the route while catalog return links retain the current list page and open detail', async () => {

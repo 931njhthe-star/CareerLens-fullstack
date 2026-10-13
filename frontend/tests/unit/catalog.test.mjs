@@ -224,6 +224,51 @@ test('catalog controller preserves return state on search while keeping it out o
   assert.equal(next.get('return_to'), returnTo);
 });
 
+test('confirming a job posting opens the flow popup before selection continues', async () => {
+  const source = readFileSync(
+    new URL('../../src/features/job-postings/catalog.js', import.meta.url),
+    'utf8',
+  )
+    .replace(/^import[\s\S]*?from ['"][^'"]+['"];?\r?\n/gm, '')
+    .replace(/^export /gm, '');
+  const events = [];
+  const button = {
+    disabled: false,
+    addEventListener(_type, listener) {
+      this.listener = listener;
+    },
+  };
+  const main = {
+    set innerHTML(_value) {},
+    querySelectorAll: () => [],
+  };
+  const context = vm.createContext({
+    AbortController,
+    URLSearchParams,
+    document: {
+      getElementById: (id) => id === 'main' ? main : id === 'select-posting' ? button : null,
+    },
+    window: { alert() {} },
+    api: async () => ({ posting }),
+    bindCounters() {},
+    jobDetailPage: () => '<button id="select-posting"></button>',
+    openFlowViewer: () => {
+      events.push('popup');
+      return {};
+    },
+    options: {
+      route: { kind: 'detail', id: posting.id, query: new URLSearchParams() },
+      user: { id: 'member' },
+      onSelect: async () => events.push('select'),
+    },
+  });
+  vm.runInContext(source, context);
+  await vm.runInContext('bindCatalog(options)', context);
+  await button.listener({ currentTarget: button });
+
+  assert.deepEqual(events, ['popup', 'select']);
+});
+
 test('job pages render untrusted API values as text and reject executable source URLs', () => {
   const payload = '<img src=x onerror="alert(1)">';
   const dangerous = {

@@ -7,7 +7,7 @@ import {
   opportunityCountLabel,
 } from '../../pages/opportunities.js';
 import { opportunityPath, opportunityQuery } from './opportunity-state.js';
-import { recordFlowEvent } from '../activity-flow/events.js';
+import { openFlowViewer, recordFlowEvent } from '../activity-flow/events.js';
 
 export function bindOpportunities({ route, user, navigate, onSelect, onError }) {
   const controller = new AbortController();
@@ -87,6 +87,8 @@ export function bindOpportunities({ route, user, navigate, onSelect, onError }) 
         'click',
         async () => {
           if (apply.disabled) return;
+          if (user?.id && !openFlowViewer())
+            window.alert?.('이용 흐름 팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.');
           apply.disabled = true;
           try {
             await onSelect(posting);

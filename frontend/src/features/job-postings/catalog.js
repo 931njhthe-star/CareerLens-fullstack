@@ -3,6 +3,7 @@ import { publicErrorMessage } from '../../shared/api/error-messages.js';
 import { notice, pending, bindCounters } from '../../shared/components/ui.js';
 import { jobListPage, jobDetailPage, postingEditorPage, jobsError } from '../../pages/jobs.js';
 import { catalogPath, catalogQuery, postingPayload } from './catalog-state.js';
+import { openFlowViewer } from '../activity-flow/events.js';
 
 const drafts = new Map();
 let activeRequest;
@@ -127,6 +128,8 @@ export async function bindCatalog({
   document.getElementById('select-posting')?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
     if (button.disabled) return;
+    if (user?.id && !openFlowViewer())
+      window.alert?.('이용 흐름 팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.');
     button.disabled = true;
     try {
       await onSelect(posting);
