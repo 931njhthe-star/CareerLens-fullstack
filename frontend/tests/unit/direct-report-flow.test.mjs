@@ -101,7 +101,9 @@ function selectionFixture({
   }
   const context = vm.createContext({
     beginFlowEvent: flow.begin, finishFlowEvent: flow.finish, recordFlowEvent: flow.record,
-    observeFlowProgress(update) { progressUpdates.push(update); }, setFlowSession() {}, mountFlowLauncher() {},
+    observeFlowProgress(update) { progressUpdates.push(update); },
+    endFlowObservation(observation, options = {}) { events.push(`observation-ended:${options.confirmedCancelled === true ? 'confirmed' : 'stopped'}`); },
+    setFlowSession() {}, mountFlowLauncher() {},
     document: { getElementById: () => ({ dataset: {} }) },
     window: { addEventListener() {} },
     location,
@@ -490,6 +492,8 @@ test('failed direct analysis closes its overlay, stays on the posting and allows
   assert.equal(fixture.snapshot().workspace.draft.report, null);
   assert.equal(fixture.flow.snapshot().events.some((event) => event.node === 'report'), false);
   assert.equal(fixture.flow.snapshot().events.find((event) => event.node === 'evaluate').state, 'failed');
+  assert.ok(fixture.events.includes('observation-ended:stopped'), 'failed transport releases active progress without inventing a server failure');
+  assert.ok(!fixture.events.includes('observation-ended:confirmed'));
   fail = false;
   await fixture.select();
   assert.equal(fixture.overlays.length, 2);

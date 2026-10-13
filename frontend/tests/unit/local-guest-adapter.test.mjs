@@ -1,6 +1,6 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { backendApi, enableBackendAdapter } from '../../src/shared/api/backend-adapter.js';
+import { backendApi, enableBackendAdapter, captureBackendSession, storeBackendCredentials } from '../../src/shared/api/backend-adapter.js';
 
 const GUEST = 'careerlens.backend.guest';
 const TOKEN = 'careerlens.backend.access-token';
@@ -55,6 +55,26 @@ beforeEach(() => {
     getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, String(value)), removeItem: (key) => data.delete(key) };
   enableBackendAdapter();
 });
+
+for (const status of ['failed', 'cancelled']) {
+  test(`an explicit retry after a ${status} guest run gets one new intent without extending its expiry`, async () => {
+    const input = stage({ local_run: { id: 'old-run', status, idempotency_key: 'old-key' } });
+    let created = 0;
+    const { api, calls } = harness({ '/local-guest/analyses': (options) => {
+      created++;
+      assert.notEqual(options.idempotencyKey, 'old-key');
+      assert.equal(options.body.resume_text, input.resume_text);
+      assert.equal(options.body.expires_at, input.expires_at);
+      return metadata({ status: 'queued', completed: false });
+    } });
+    await api('/auth/session');
+    const completed = await api('/guest/analysis', { method: 'POST' });
+    assert.equal(completed.completed, true);
+    assert.equal(created, 1);
+    assert.equal(calls.some(({ path }) => path.includes('/old-run')), false);
+    assert.equal(stored(GUEST).expires_at, input.expires_at);
+  });
+}
 
 test('real capability starts guest calculation from server job id and exposes only locked metadata', async () => {
   const { api, calls } = harness();
@@ -199,6 +219,25 @@ test('local claim rejects account replacement and leaves pending guest data reco
   await assert.rejects(api('/guest/claim', { method: 'POST' }), { name: 'AbortError' });
   assert.equal(stored(WORKSPACE), null);
   assert.equal(stored(GUEST).local_run.id, 'guest-run');
+});
+
+test('claim and stored local-report operations survive verified token renewal for the same login', async () => {
+  let renewal = 0;
+  const refresh = () => storeBackendCredentials({ access_token: `renewed-owner-${++renewal}` }, captureBackendSession());
+  const { api, calls } = harness({
+    '/local-guest/analyses/guest-run/claim': () => { refresh(); return result(); },
+    '/local-guest/reports': () => { refresh(); return { reports: [metadata()] }; },
+    '/local-guest/reports/guest-run': (options) => { refresh(); return options.method === 'DELETE' ? { deleted: true } : result(); },
+  });
+  sessionStorage.setItem(TOKEN, 'owner-token');
+  await api('/auth/session');
+  stage({ completed: true, local_run: { id: 'guest-run', status: 'completed', idempotency_key: 'fixed' } });
+  assert.equal((await api('/guest/claim', { method: 'POST' })).draft.report.run_id, 'local-guest:guest-run');
+  const list = await api('/account/reports');
+  assert.equal(list.items[0].can_delete, true);
+  assert.equal((await api('/account/reports/local-guest:guest-run')).draft.report.storage_origin, 'frontend_guest');
+  assert.equal((await api('/account/reports/local-guest:guest-run', { method: 'DELETE' })).deleted, true);
+  assert.equal(calls.some(({ path }) => path === '/evaluations' || path === '/resumes'), false);
 });
 
 test('local claim requires the owner verified by the frontend server before storing the report', async () => {

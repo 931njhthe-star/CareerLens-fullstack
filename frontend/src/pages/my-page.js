@@ -38,8 +38,9 @@ export function filterSavedReports(items = [], query = '', status = '') {
 
 function savedReportRow(
   item,
-  { selectedIds, selectionDisabled, deleteDisabled, canDeleteReports },
+  { selectedIds, selectionDisabled },
 ) {
+  const canDelete = item.can_delete === true;
   const id = String(item.id ?? '');
   const shortId = id.length > 12 ? `${id.slice(0, 12)}…` : id;
   const partial = item.status === 'partial';
@@ -56,7 +57,7 @@ function savedReportRow(
           value="${e(id)}"
           aria-label="${e(label)} 보고서 선택"
           ${selectedIds.has(id) ? 'checked' : ''}
-          ${selectionDisabled ? 'disabled' : ''}>
+          ${selectionDisabled || !canDelete ? 'disabled' : ''}>
         <span>선택</span>
       </label>
       <div class="saved-report__details">
@@ -91,8 +92,8 @@ function savedReportRow(
           type="button"
           data-report-delete="${e(id)}"
           aria-label="${e(label)} 보고서 삭제"
-          ${!canDeleteReports ? 'aria-describedby="reports-delete-help"' : ''}
-          ${deleteDisabled ? 'disabled' : ''}>삭제</button>
+          ${!canDelete ? 'aria-describedby="reports-delete-help"' : ''}
+          ${selectionDisabled || !canDelete ? 'disabled' : ''}>삭제</button>
       </div>
     </li>
   `;
@@ -105,27 +106,29 @@ export function savedReportsList({
   nextOffset = null,
   demo = false,
   loaded = false,
-  canDeleteReports = false,
   selectedIds = [],
   deleting = false,
+  deleteError = '',
   query = '',
   status = '',
 } = {}) {
   const hasMore = nextOffset !== null;
   const pending = loading || (!loaded && !error && !items.length);
   const selectionDisabled = pending || deleting;
+  const canDeleteReports = items.some((item) => item.can_delete === true);
   const deleteDisabled = !canDeleteReports || selectionDisabled;
   const selected = new Set(selectedIds);
-  const selectedCount = items.filter(({ id }) => selected.has(String(id))).length;
+  const selectedCount = items.filter((item) => item.can_delete === true && selected.has(String(item.id))).length;
   const filter = ['completed', 'partial'].includes(status) ? status : '';
   const visible = filterSavedReports(items, query, status);
-  const visibleSelectedCount = visible.filter(({ id }) => selected.has(String(id))).length;
-  const allSelected = visible.length > 0 && visibleSelectedCount === visible.length;
+  const selectable = visible.filter((item) => item.can_delete === true);
+  const visibleSelectedCount = selectable.filter(({ id }) => selected.has(String(id))).length;
+  const allSelected = selectable.length > 0 && visibleSelectedCount === selectable.length;
   const hiddenSelectedCount = selectedCount - visibleSelectedCount;
   return `
     <div class="saved-reports__content" aria-busy="${Boolean(pending || deleting)}">
       ${demo ? '<p class="saved-reports__note">시연 모드에서는 계정에 저장된 실제 보고서를 불러오지 않습니다.</p>' : ''}
-      ${!canDeleteReports ? '<p id="reports-delete-help" class="saved-reports__capability-note">보고서 삭제는 백엔드 연동 준비 중입니다. 연동 후 개별·선택 삭제를 사용할 수 있습니다.</p>' : ''}
+      ${items.some((item) => item.can_delete !== true) ? '<p id="reports-delete-help" class="saved-reports__capability-note">삭제를 지원하는 보고서만 선택해 삭제할 수 있습니다. 삭제 버튼이 비활성화된 보고서는 현재 저장 서버에서 삭제를 지원하지 않습니다.</p>' : ''}
       ${
         items.length
           ? `<div class="saved-reports__filters">
@@ -150,8 +153,8 @@ export function savedReportsList({
                   data-reports-select-all
                   aria-checked="${allSelected ? 'true' : visibleSelectedCount ? 'mixed' : 'false'}"
                   ${allSelected ? 'checked' : ''}
-                  ${selectionDisabled || !visible.length ? 'disabled' : ''}>
-                <span>현재 목록 전체 선택</span>
+                  ${selectionDisabled || !selectable.length ? 'disabled' : ''}>
+                <span>현재 목록의 삭제 가능한 보고서 전체 선택</span>
               </label>
               <div class="saved-reports__selection-actions">
                 ${selectedCount ? `<span class="saved-reports__selection-count">${selectedCount}개 선택${hiddenSelectedCount ? ` · 현재 목록 밖 ${hiddenSelectedCount}개 포함` : ''}</span>` : ''}
@@ -162,9 +165,10 @@ export function savedReportsList({
             </div>`
           : ''
       }
-      ${visible.length ? `<ul class="saved-reports__rows">${visible.map((item) => savedReportRow(item, { selectedIds: selected, selectionDisabled, deleteDisabled, canDeleteReports })).join('')}</ul>` : ''}
+      ${visible.length ? `<ul class="saved-reports__rows">${visible.map((item) => savedReportRow(item, { selectedIds: selected, selectionDisabled })).join('')}</ul>` : ''}
       ${items.length && !visible.length ? '<div class="saved-reports__feedback"><p>불러온 보고서 중 검색 조건에 맞는 기록이 없습니다.</p><p class="saved-reports__hint">검색어나 평가 상태를 바꾸거나 다음 기록을 불러와 주세요.</p></div>' : ''}
       ${deleting ? '<p class="saved-reports__loading" role="status">선택한 보고서를 삭제하는 중…</p>' : ''}
+      ${deleteError ? `<p class="saved-reports__feedback saved-reports__feedback--error" role="alert">${e(deleteError)}</p>` : ''}
       ${
         error
           ? `
@@ -211,7 +215,7 @@ export function myPage(user, { hasCurrentReport = false, canDeleteReports = fals
         </div>
         <div class="my-page__actions">
           <a class="button secondary" href="#/resume">이력서로 가기 ${icon('arrow', 16)}</a>
-          ${typeof user?.id === 'string' && user.id.trim() ? '<a class="button secondary" href="#/admin">대시보드</a>' : ''}
+          ${typeof user?.id === 'string' && user.id.trim() && user.demo !== true ? '<a class="button secondary" href="#/admin">대시보드</a><a class="button secondary" href="/?view=flow" data-flow-open>이용 흐름 새 창</a>' : ''}
         </div>
       </div>
       <div class="my-page__body">

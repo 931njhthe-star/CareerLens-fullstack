@@ -1,7 +1,7 @@
 """Serve the independent frontend and proxy its same-origin API to Python."""
 
 from pathlib import Path
-from tempfile import gettempdir
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import argparse
 import ipaddress
@@ -16,14 +16,11 @@ from uuid import UUID
 from flask import Flask, Request as FlaskRequest, Response, jsonify, request, send_from_directory
 from waitress import serve
 from werkzeug.exceptions import HTTPException, NotFound, Unauthorized, ServiceUnavailable
-if __package__:
-    from .resume_conversion import MAX_UPLOAD_BYTES, extract_resume
-    from .guest_analysis_service import create_guest_blueprint
-    from .guest_analysis_engine import engine_available
-else:
-    from resume_conversion import MAX_UPLOAD_BYTES, extract_resume
-    from guest_analysis_service import create_guest_blueprint
-    from guest_analysis_engine import engine_available
+from werkzeug.middleware.proxy_fix import ProxyFix
+from resume_conversion import MAX_UPLOAD_BYTES, extract_resume
+from guest_analysis_service import create_guest_blueprint
+from guest_analysis_engine import engine_available
+from job_catalog_service import install_job_catalog
 
 ROOT = Path(__file__).resolve().parent
 
@@ -74,8 +71,44 @@ def public_api_error(status, path="", upstream_body=b""):
     return {"error": {"code": code, "message": PUBLIC_ERRORS[code]}}
 
 
+_PUBLIC_PROGRESS_MESSAGES = {
+    ("parsing", "이력서 문서 구조화 시작", "running"),
+    ("parsing", "이력서 문서 구조화 완료", "running"),
+    ("parsing", "채용공고 구조화 완료", "running"),
+    ("indexing", "이력서 근거 검색 준비 완료", "running"),
+    ("evaluation", "4개 영역·12개 항목 병렬 평가 시작", "running"),
+    ("validation", "전체 평가 결과 교차 검토 시작", "running"),
+    ("validation", "전체 평가 결과 교차 검토 완료", "completed"),
+    ("validation", "최종 점수 계산 시작", "running"),
+    ("validation", "최종 점수 계산 완료", "completed"),
+    ("validation", "점수 계산 및 Markdown 보고서 생성 시작", "running"),
+    ("validation", "최종 Markdown 보고서 저장 완료", "completed"),
+    ("completed", "평가 및 Markdown 보고서 완료", "completed"),
+    ("cancelled", "새 평가 요청으로 이전 평가가 취소되었습니다.", "skipped"),
+}
+_PUBLIC_CRITERION_STEPS = {
+    "평가 시작", "이력서 근거 검색 시작", "이력서 근거 검색 완료",
+    "규칙 기반 점수 판정 완료", "초안 평가 요청 중", "초안 평가 완료",
+    "근거 검토 요청 중", "근거 검토 완료", "독립 평가 요청 중", "독립 평가 완료",
+    "평가 차이 재검토 요청 중", "평가 차이 재검토 완료", "원문 인용 및 점수 검증 중",
+    "검증 오류 보완 요청 중", "검증 오류 보완 완료",
+}
+_PUBLIC_PROGRESS_MESSAGES.update(
+    ("criterion", f"{domain}{number} · {step}", "running")
+    for domain in "ABCD" for number in range(1, 4) for step in _PUBLIC_CRITERION_STEPS
+)
+_PUBLIC_PROGRESS_MESSAGES.update(
+    ("criterion", f"{domain}{number} · {count}/12개 항목 검증 및 저장 완료", "completed")
+    for domain in "ABCD" for number in range(1, 4) for count in range(1, 13)
+)
+_PUBLIC_PROGRESS_MESSAGES.update(
+    ("validation", f"검토 지적 항목 {count}개 재평가 {phase}", status)
+    for count in range(1, 13) for phase, status in (("시작", "running"), ("완료", "completed"))
+)
+
+
 def public_evaluation_progress(data):
-    """The progress contract needs identifiers/state, never diagnostic messages."""
+    """Keep public worker milestones; never forward arbitrary diagnostics."""
     if not isinstance(data, dict):
         raise ValueError("Invalid evaluation progress response")
     if "run" in data:
@@ -92,6 +125,12 @@ def public_evaluation_progress(data):
             "started_at", "completed_at", "created_at",
         ) if key in data
     }
+    # The baseline API distinguishes parsers/criteria with fixed milestone text.
+    # Keep only exact, bounded protocol literals consumed by backend-progress.js;
+    # unknown messages, appended document content and wrong statuses stay private.
+    milestone = tuple(data.get(key) for key in ("stage", "message", "status"))
+    if all(isinstance(value, str) for value in milestone) and milestone in _PUBLIC_PROGRESS_MESSAGES:
+        result["message"] = milestone[1]
     if "failure_reason" in data:
         result["failure_reason"] = (
             "모의지원을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."
@@ -301,7 +340,7 @@ def load_local_env(path):
         os.environ.setdefault(key, value)
 
 
-def validate_origin(value):
+def validate_origin(value, *, internal_host=None):
     """Only a fixed operator-configured HTTPS origin or local HTTP is accepted."""
     if any(char.isspace() for char in value):
         raise ValueError("API origin must not contain whitespace.")
@@ -337,7 +376,7 @@ def validate_origin(value):
             for label in hostname.rstrip(".").split(".")
         ):
             raise ValueError("API origin has an invalid hostname.")
-    if parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+    if parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "localhost", "::1", internal_host):
         raise ValueError(
             "HTTP is supported only for loopback development APIs. Use HTTPS for remote APIs."
         )
@@ -379,32 +418,29 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def create_app(backend_url=None, *, integrated=False):
+def create_app(backend_url=None):
     app = Flask(__name__, static_folder=None)
     app.request_class = InMemoryUploadRequest
     app.config.update(
         MAX_CONTENT_LENGTH=11 * 1024 * 1024, TRUSTED_HOSTS=["127.0.0.1", "localhost", "[::1]"]
     )
     configured = backend_url if backend_url is not None else os.environ.get("BACKEND_URL", "")
-    origin = validate_origin(configured) if configured else None
+    origin = validate_origin(configured, internal_host=os.environ.get("CAREERLENS_INTERNAL_API_HOST")) if configured else None
+    # Enable only behind the deployment's single private TLS reverse proxy.
+    if os.environ.get("CAREERLENS_TRUST_PROXY") == "1":
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=0, x_port=0, x_prefix=0)
     on_render = os.environ.get("RENDER") == "true"
-    on_vercel = os.environ.get("VERCEL") == "1"
-    if (on_render or on_vercel) and origin:
+    if on_render and origin:
         backend = urlsplit(origin)
         try:
             loopback = ipaddress.ip_address(backend.hostname).is_loopback
         except ValueError:
             loopback = backend.hostname == "localhost"
         if backend.scheme != "https" or loopback:
-            raise ValueError("Hosted BACKEND_URL must be the deployed API's HTTPS origin, not localhost.")
+            raise ValueError("Render BACKEND_URL must be the deployed API's HTTPS origin, not localhost.")
     public_origins = [os.environ.get("FRONTEND_PUBLIC_ORIGIN", "")]
     if on_render:
         public_origins.append(os.environ.get("RENDER_EXTERNAL_URL", ""))
-    if on_vercel:
-        for variable in ("VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
-            host = os.environ.get(variable, "").strip()
-            if host:
-                public_origins.append("https://" + host)
     for public_origin in public_origins:
         if public_origin:
             app.config["TRUSTED_HOSTS"].append(urlsplit(validate_origin(public_origin)).hostname)
@@ -434,14 +470,96 @@ def create_app(backend_url=None, *, integrated=False):
         except (URLError, TimeoutError, OSError):
             raise ServiceUnavailable() from None
 
+    install_job_catalog(app, origin, opener, verify_guest_report_owner)
+
     guest_api = create_guest_blueprint(
-        (Path(gettempdir()) / "careerlens-frontend" if on_vercel else ROOT / ".runtime") / "guest-reports.sqlite3",
+        Path(os.environ.get("CAREERLENS_GUEST_STORE_PATH", str(ROOT / ".runtime" / "guest-reports.sqlite3"))),
         fetch_job=guest_catalog_job,
         verify_user=verify_guest_report_owner,
         available=lambda: bool(origin) and os.environ.get("CAREERLENS_GUEST_ANALYSIS", "1") != "0" and engine_available(),
     )
     app.register_blueprint(guest_api)
     app.extensions["guest_analysis"] = guest_api.guest_service
+
+    def member_dashboard_json(path):
+        # Existing ownership-checked backend routes verify the bearer token.
+        # Never impersonate an administrator or query the database directly.
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer ") or not authorization[7:].strip():
+            raise Unauthorized()
+        if not origin:
+            raise ServiceUnavailable()
+        try:
+            with opener.open(Request(origin + "/api/v1/" + path, headers={
+                "Authorization": authorization, "Accept": "application/json",
+            }), timeout=15) as response:
+                if response.code != 200:
+                    raise ServiceUnavailable()
+                return json.loads(response.read())
+        except HTTPError as error:
+            status = error.code if error.code in {401, 403, 404, 429} else 503
+            from werkzeug.exceptions import abort
+            abort(status)
+        except (URLError, TimeoutError, OSError, ValueError, TypeError):
+            raise ServiceUnavailable() from None
+
+    def dashboard_run(row):
+        if not isinstance(row, dict):
+            raise ServiceUnavailable()
+        try:
+            identifier = str(UUID(str(row["id"])))
+        except (KeyError, ValueError, TypeError):
+            raise ServiceUnavailable() from None
+        result = {"id": identifier}
+        if row.get("status") in {"queued", "running", "completed", "partial", "failed", "cancelled"}:
+            result["status"] = row["status"]
+        for field in ("created_at", "started_at", "completed_at"):
+            value = row.get(field)
+            if isinstance(value, str) and len(value) <= 40:
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    if parsed.tzinfo:
+                        result[field] = parsed.isoformat()
+                except ValueError:
+                    pass
+        return result
+
+    @app.get("/api/v1/admin/evaluation-performance")
+    def member_dashboard():
+        try:
+            days = int(request.args.get("days", "30"))
+            limit = int(request.args.get("run_limit", "100"))
+            if not 1 <= days <= 90 or not 1 <= limit <= 200:
+                raise ValueError()
+        except ValueError:
+            return jsonify(public_api_error(422)), 422
+        rows = []
+        for offset in range(0, limit, 100):
+            count = min(100, limit - offset)
+            page = member_dashboard_json(f"evaluations?limit={count}&offset={offset}")
+            if not isinstance(page, list):
+                raise ServiceUnavailable()
+            rows.extend(dashboard_run(row) for row in page[:count])
+            if len(page) < count:
+                break
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=days)
+        runs = [row for row in rows if row.get("created_at") and datetime.fromisoformat(row["created_at"]) >= cutoff]
+        return jsonify({"generated_at": now.isoformat(), "runs": runs, "stages": [],
+                        "summary": {"run_count": len(runs)},
+                        "scope": {"mode": "account", "days": days, "run_limit": limit,
+                                  "limited": len(rows) >= limit,
+                                  "reason": "현재 계정의 최근 실행 표본입니다. 원본 API는 전체 계정 집계와 상세 계측을 일반 회원에게 제공하지 않습니다."}})
+
+    @app.get("/api/v1/admin/evaluation-performance/<uuid:run_id>")
+    def member_dashboard_detail(run_id):
+        run = dashboard_run(member_dashboard_json(f"evaluations/{run_id}"))
+        if run["id"] != str(run_id):
+            raise ServiceUnavailable()
+        reason = "현재 원본 API에서 이 상세 계측을 제공하지 않습니다. 실제 실행 여부나 0값으로 추정하지 않습니다."
+        run["availability"] = {name: {"status": "unsupported", "reason": reason}
+                               for name in ("input", "nodes", "tools", "memory", "validation", "scores", "persistence", "llm", "usage", "test_evidence")}
+        return jsonify({"run": run, "scope": {"mode": "account"}})
 
     @app.get("/")
     def index():
@@ -528,9 +646,6 @@ def create_app(backend_url=None, *, integrated=False):
 
     @app.route("/api/<path:name>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     def api(name):
-        if integrated:
-            # FastAPI has already handled its routes before this fallback.
-            return jsonify(public_api_error(404, request.path)), 404
         if not origin:
             return (
                 jsonify(
@@ -660,6 +775,3 @@ if __name__ == "__main__":
         inbuf_overflow=12 * 1024 * 1024,
         max_request_body_size=11 * 1024 * 1024,
     )
-else:
-    # Vercel imports this module and discovers the WSGI app instance.
-    app = create_app()

@@ -53,6 +53,75 @@ function storedDraft(id = 'stored-run') {
   };
 }
 
+const deletableReports = () => [
+  { id: 'local-guest:one', can_delete: true, status: 'completed', created_at: '2026-10-13T00:00:00Z' },
+  { id: 'local-guest:two', can_delete: true, status: 'partial', created_at: '2026-10-13T00:01:00Z' },
+  { id: 'backend-report', status: 'completed', created_at: '2026-10-13T00:02:00Z' },
+];
+
+test('MyPage deletes only supported reports after server confirmation and preserves failed rows', async () => {
+  const deletes = [];
+  const fixture = accountFixture({
+    draft: storedDraft('local-guest:one'),
+    request: async (path, options) => {
+      if (options.method === 'DELETE') {
+        deletes.push(path);
+        if (path.endsWith('two')) throw new Error('Synthetic connection loss');
+        return { deleted: true };
+      }
+      return path.includes('?') ? { items: deletableReports(), next_offset: null }
+        : { job_context: { title: 'Synthetic report', company: 'Fixture' } };
+    },
+  });
+  await fixture.render();
+  const host = fixture.element('saved-reports-list');
+  const unsupported = host.querySelectorAll('[data-report-delete]').find((item) => item.dataset.reportDelete === 'backend-report');
+  assert.equal(unsupported.disabled, true);
+  const selectAll = host.querySelector('[data-reports-select-all]');
+  selectAll.checked = true;
+  selectAll.dispatch('change');
+  await fixture.click(host.querySelector('[data-reports-delete-selected]'));
+  assert.deepEqual(deletes, ['/account/reports/local-guest%3Aone', '/account/reports/local-guest%3Atwo']);
+  assert.doesNotMatch(host.innerHTML, /data-report-delete="local-guest:one"/);
+  assert.match(host.innerHTML, /data-report-delete="local-guest:two"/);
+  assert.match(host.innerHTML, /data-report-delete="backend-report"/);
+  assert.match(host.innerHTML, /1개 보고서를 삭제하지 못했습니다/);
+  assert.equal(fixture.snapshot().workspace.draft.report, undefined);
+});
+
+test('MyPage does not pretend an unconfirmed delete response succeeded', async () => {
+  const fixture = accountFixture({ request: async (path, options) => {
+    if (options.method === 'DELETE') return { deleted: false };
+    return path.includes('?') ? { items: [deletableReports()[0]], next_offset: null } : { job_context: {} };
+  } });
+  await fixture.render();
+  const host = fixture.element('saved-reports-list');
+  await fixture.click(host.querySelector('[data-report-delete]'));
+  assert.match(host.innerHTML, /data-report-delete="local-guest:one"/);
+  assert.match(host.innerHTML, /삭제하지 못했습니다/);
+});
+
+for (const replace of ['navigation', 'owner']) {
+  test(`a late report deletion response cannot mutate a replacement ${replace}`, async () => {
+    const pending = deferred();
+    const fixture = accountFixture({ draft: storedDraft('local-guest:one'), request: async (path, options) => {
+      if (options.method === 'DELETE') return pending.promise;
+      return path.includes('?') ? { items: [deletableReports()[0]], next_offset: null } : { job_context: {} };
+    } });
+    await fixture.render();
+    const oldHost = fixture.element('saved-reports-list');
+    const deleting = oldHost.querySelector('[data-report-delete]').dispatch('click');
+    if (replace === 'navigation') await fixture.render('#/admin');
+    else fixture.changeOwner();
+    const writes = oldHost.writes;
+    pending.resolve({ deleted: true });
+    await deleting;
+    await settle();
+    assert.equal(oldHost.writes, writes);
+    assert.equal(fixture.snapshot().workspace.draft.report.run_id, 'local-guest:one');
+  });
+}
+
 // Only DOM mounting, authentication widgets and transport are replaced. The
 // account route guards, response ownership and workspace state are real main.js.
 function accountFixture({
@@ -92,6 +161,8 @@ function accountFixture({
         const attributes = [...match[0].matchAll(/\b(data-[\w-]+)(?:="([^"]*)")?/g)];
         if (!id && !attributes.length) continue;
         const child = new Element(id);
+        child.disabled = /\sdisabled(?:\s|>)/.test(match[0]);
+        child.checked = /\schecked(?:\s|>)/.test(match[0]);
         child.dataAttributes = new Set(attributes.map((attribute) => attribute[1]));
         for (const [, name, value = ''] of attributes)
           child.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] =
@@ -112,8 +183,9 @@ function accountFixture({
         ? this.children.find((child) => child.dataAttributes?.has(attribute)) || null
         : null;
     }
-    querySelectorAll() {
-      return [];
+    querySelectorAll(selector) {
+      const attribute = selector?.match(/^\[(data-[\w-]+)\]$/)?.[1];
+      return attribute ? this.children.filter((child) => child.dataAttributes?.has(attribute)) : [];
     }
     addEventListener(type, callback) {
       this.listeners.set(type, callback);
@@ -122,7 +194,8 @@ function accountFixture({
       this.focused = true;
     }
     dispatch(type) {
-      return this.listeners.get(type)?.({ currentTarget: this, preventDefault() {} });
+      if (this.disabled) return;
+      return this.listeners.get(type)?.({ currentTarget: this, target: this, preventDefault() {} });
     }
   }
   const app = new Element('app');
@@ -152,6 +225,7 @@ function accountFixture({
     finishFlowEvent: flow.finish,
     recordFlowEvent: flow.record,
     observeFlowProgress() {},
+    endFlowObservation() {},
     setFlowSession: flow.setSession,
     mountFlowLauncher() {},
     document,
@@ -571,21 +645,27 @@ test('an inaccessible saved report provides a safe retry without replacing the a
   );
 });
 
-test('dashboard opens directly without login or access to private account data', async () => {
+test('guest dashboard direct access requires login without fetching operations', async () => {
   const fixture = accountFixture({ member: false });
-  const returnAfterLogin = fixture.snapshot().returnAfterLogin;
   await fixture.render('#/admin');
-  assert.equal(fixture.location.hash, '#/admin');
-  assert.equal(fixture.snapshot().returnAfterLogin, returnAfterLogin);
+  assert.equal(fixture.location.hash, '#/email');
+  assert.equal(fixture.snapshot().returnAfterLogin, 'admin');
   assert.equal(fixture.calls.requests.length, 0);
-  assert.match(fixture.app.innerHTML, /data-admin-dashboard/);
-  assert.match(fixture.document.title, /대시보드/);
+  assert.doesNotMatch(fixture.app.innerHTML, /data-admin-dashboard/);
+});
+
+test('guest menus and dashboard contain no operations entry', () => {
+  const markup = shell(adminDashboard(), { user: null, page: 'admin' });
+  assert.doesNotMatch(markup, /href="#\/admin"|data-admin-flow/);
+  assert.match(markup, /로그인 상태/);
+  assert.doesNotMatch(markup, /href="#\/mypage"/);
 });
 
 test('normal members can open the dashboard from My Page and a direct address', async () => {
   const fixture = accountFixture();
   await fixture.render('#/mypage');
   assert.match(fixture.app.innerHTML, /href="#\/admin"/);
+  assert.match(fixture.app.innerHTML, /href="\/\?view=flow"/);
   await fixture.render('#/admin');
   assert.match(fixture.document.title, /대시보드/);
   assert.match(fixture.app.innerHTML, /data-admin-dashboard/);

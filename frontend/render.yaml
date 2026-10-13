@@ -1,4 +1,6 @@
-# Test/presentation deployment: frontend only. No backend, worker or database provisioning.
+# Historical frontend-only preview. Full member/guest/multi-user deployment:
+# infra/deploy/compose.yaml (API, worker, shared Redis, persistent guest storage).
+# This preview alone does NOT provide guest analysis or shared monitoring.
 services:
   - type: web
     name: careerlens-frontend-demo

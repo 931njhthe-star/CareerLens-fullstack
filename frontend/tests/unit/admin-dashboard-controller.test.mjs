@@ -128,7 +128,7 @@ test('an older server without detail support does not make an existing run look 
   cleanup();
 });
 
-test('dashboard summary and detail bypass browser cache without sending account tokens', async () => {
+test('dashboard summary and detail bypass browser cache with authenticated member requests', async () => {
   const originalFetch = globalThis.fetch, originalStorage = globalThis.sessionStorage;
   globalThis.sessionStorage = { getItem: (key) => key.endsWith('access-token') ? 'private-fixture' : null };
   enableBackendAdapter();
@@ -140,7 +140,7 @@ test('dashboard summary and detail bypass browser cache without sending account 
     assert.equal(calls.length, 2);
     for (const { options } of calls) {
       assert.equal(options.cache, 'no-store');
-      assert.equal(options.headers.Authorization, undefined);
+      assert.equal(options.headers.Authorization, 'Bearer private-fixture');
     }
   } finally { globalThis.fetch = originalFetch; globalThis.sessionStorage = originalStorage; }
 });

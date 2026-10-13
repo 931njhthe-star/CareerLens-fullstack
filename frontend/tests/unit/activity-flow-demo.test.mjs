@@ -196,7 +196,7 @@ test('locked, failed claim, expired, and cancelled guest cases never fabricate a
   assert.ok(atState(recovery, 'api_guest_service', 'complete') < atState(recovery, 'guest_store', 'complete'));
 });
 
-test('saved report and public dashboard reads never create an evaluation or write data', () => {
+test('saved report and member dashboard reads never create an evaluation or write data', () => {
   for (const id of ['report_history', 'report_saved', 'report_empty', 'report_inaccessible', 'report_not_ready', 'report_session_expired', 'dashboard', 'dashboard_empty', 'dashboard_failed', 'dashboard_filter']) {
     assert.equal(run(id).some((event) => ['database', 'api_evaluation', 'analysis'].includes(event.node)), false, id);
   }

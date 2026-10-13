@@ -1,0 +1,2604 @@
+diff --git a/.env.example b/.env.example
+index 9dbbb2ac010972a19b58cf96468cb9accc9f50d7..7338c467c9c6903bcabfc8fea92d1b56c800ff2e 100644
+--- a/.env.example
++++ b/.env.example
+@@ -10,10 +10,12 @@ SUPABASE_SERVICE_ROLE_KEY=
+ SUPABASE_DB_URL=
+ 
+ APP_ENV=development
++# Required in production: shared by all API, worker and frontend guest processes.
++# Keep Redis private; use rediss:// where the provider requires TLS.
++CAREERLENS_FLOW_REDIS_URL=
+ # Protected endpoints require authentication.
+ AUTH_ENABLED=true
+-# Comma-separated Supabase Auth user UUIDs permitted to view aggregate performance data.
+-# Empty means nobody is an administrator.
++# Reserved legacy setting; dashboard/flow reads allow every authenticated member.
+ ADMIN_USER_IDS=
+ CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+ UPLOAD_MAX_BYTES=10485760
+diff --git a/app/agent/graphs/matching.py b/app/agent/graphs/matching.py
+index f01189495345ebcd5d9a27f7fcca9c495592aebd..11785a665d98c35c05c135451730d8eed6f9d706 100644
+--- a/app/agent/graphs/matching.py
++++ b/app/agent/graphs/matching.py
+@@ -9,6 +9,7 @@ from app.modules.analysis.models import CriterionResult, CriticReview, ParsedRes
+ from app.modules.analysis.scoring.rubric import CRITERIA, BY_CODE, DOMAIN_WEIGHTS
+ from app.modules.analysis.scoring.calculator import calculate, qualifications
+ from app.retrieval.indexing.markdown import lexical_search
++from app.core.telemetry import observe_tool
+ 
+ 
+ def merge(left, right):
+@@ -57,10 +58,11 @@ def evidence_issues(result: CriterionResult, state: State) -> list[str]:
+ 
+ 
+ class EvaluationEngine:
+-    def __init__(self, llm, trace, search=None, progress=None, llm_audit=None, timing=None):
++    def __init__(self, llm, trace, search=None, progress=None, llm_audit=None, timing=None, tool_audit=None):
+         self.llm, self.trace, self.search, self.progress = llm, trace, search, progress
+         self.llm_audit = llm_audit
+         self.timing = timing
++        self.tool_audit = tool_audit
+ 
+     async def parse(self, schema, instruction, payload, phase, code=None):
+         if self.llm_audit:
+@@ -107,7 +109,11 @@ class EvaluationEngine:
+                 reasoning_summary='공고에 비교할 요구사항이 없어 100점 반영',
+                 improvement_suggestion='', evidence=[], comparison_basis='공고에 관련 요구사항 없음',
+                 estimated=False, issues=[])
+-        context = lexical_search(state['chunks'], BY_CODE[code][2] + ' ' + ' '.join(parsed_job.technical_requirements))
++        context = await observe_tool(
++            'lexical_search',
++            lambda: lexical_search(state['chunks'], BY_CODE[code][2] + ' ' + ' '.join(parsed_job.technical_requirements)),
++            self.tool_audit, criterion_code=code,
++        )
+         if not fixed and self.search and code in ('A2', 'B1', 'B2', 'B3', 'C3', 'D1', 'D2', 'D3'):
+             await self.report_progress(code, '이력서 근거 검색 시작', 0.05)
+             extra = await self.search(state, code)
+diff --git a/app/api/v1/routes/api.py b/app/api/v1/routes/api.py
+index ffdd77f1ff3f868775d62aa1137f08f95f1ca5d9..6c59056e0e0decc7aa2d3ca55903f4d44fd3088a 100644
+--- a/app/api/v1/routes/api.py
++++ b/app/api/v1/routes/api.py
+@@ -1,6 +1,7 @@
+ import asyncio
+ import json
+ import tiktoken
++from datetime import datetime, timezone
+ from uuid import UUID, uuid4
+ from urllib.parse import quote
+ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header, Query, Request
+@@ -8,6 +9,8 @@ from fastapi.responses import Response, StreamingResponse
+ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+ from pydantic import BaseModel, Field, SecretStr
+ from app.application.evaluation import active_rubric
++from app.application.dashboard import build_run_detail
++from app.application.flow import emit_server_event, link_run_source
+ from app.application.parsing import parse_document
+ from app.integrations.company_info.yahoo import financial_context
+ from app.retrieval.indexing.markdown import digest
+@@ -86,25 +89,32 @@ async def me(request: Request, uid: str = Depends(user)):
+ @router.get('/admin/evaluation-performance', tags=['admin'])
+ async def evaluation_performance(
+     request: Request,
++    response: Response,
+     days: int = Query(30, ge=1, le=90),
+     run_limit: int = Query(100, ge=1, le=200),
+     uid: str = Depends(user),
+ ):
+-    db, _, config = services(request)
+-    try:
+-        allowed = {
+-            str(UUID(value.strip()))
+-            for value in config.admin_user_ids.split(',')
+-            if value.strip()
+-        }
+-    except ValueError:
+-        raise HTTPException(503, 'ADMIN_USER_IDS에 올바른 사용자 UUID를 설정해야 합니다.') from None
+-    if uid not in allowed:
+-        raise HTTPException(403, '성능 대시보드 관리자 권한이 없습니다.')
+-    return await db.rpc('get_evaluation_performance', {
++    # All authenticated members can inspect allowlisted operational metadata.
++    db, _, _ = services(request)
++    payload = await db.rpc('get_evaluation_performance', {
+         'p_days': days,
+         'p_run_limit': run_limit,
+     })
++    response.headers['Cache-Control'] = 'no-store'
++    return {**payload, 'generated_at': datetime.now(timezone.utc).isoformat(),
++            'scope': {'accounts': 'all', 'record_type': 'evaluation_runs',
++                      'days': days, 'run_limit': run_limit, 'sample_count': len(payload.get('runs', []))}}
++
++
++@router.get('/admin/evaluation-performance/{run_id}', tags=['admin'])
++async def evaluation_performance_detail(run_id: UUID, request: Request, response: Response, uid: str = Depends(user)):
++    # Explicitly allowlisted operational metadata only; never raw account documents.
++    db, _, config = services(request)
++    run = await build_run_detail(db, str(run_id), settings=config)
++    if run is None:
++        raise HTTPException(404, '실행 기록이 없거나 삭제되었습니다.')
++    response.headers['Cache-Control'] = 'no-store'
++    return {'run': run, 'generated_at': datetime.now(timezone.utc).isoformat()}
+ 
+ 
+ @router.post('/resumes', status_code=201, tags=['resumes'], response_model=UploadedResume)
+@@ -155,10 +165,15 @@ async def delete_resume(resume_id: UUID, request: Request, uid: str = Depends(us
+ 
+ 
+ @router.get('/jobs', tags=['jobs'])
+-async def jobs(request: Request, uid: str = Depends(user), limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), company_id: UUID | None = None):
++async def jobs(request: Request, uid: str = Depends(user), limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), company_id: UUID | None = None, include_details: bool = False):
+     db, _, _ = services(request)
+     filters = {'company_id': f'eq.{company_id}'} if company_id else {}
+-    return await db.select('job_postings', select='id,company_id,title,career_min_months,education_level,source_name,source_external_id', order='collected_at.desc', limit=limit, offset=offset, **filters)
++    fields = 'id,company_id,title,career_min_months,education_level,source_name,source_external_id'
++    if include_details:
++        # The catalog needs current filter fields without one detail request per job.
++        # A left embedded company retains postings whose company_id is null.
++        fields += ',description,responsibilities,requirements,preferred_requirements,career_max_months,employment_type,location,source_url,companies(name)'
++    return await db.select('job_postings', select=fields, order='collected_at.desc', limit=limit, offset=offset, **filters)
+ 
+ 
+ @router.get('/jobs/{job_id}', tags=['jobs'])
+@@ -189,6 +204,7 @@ async def financials(company_id: UUID, request: Request, uid: str = Depends(user
+ @router.post('/evaluations', status_code=202, tags=['evaluations'], response_model=EvaluationStarted)
+ async def start(body: EvaluationRequest, request: Request, uid: str = Depends(user), idempotency_key: str | None = Header(None, max_length=128)):
+     db, _, config = services(request)
++    flow = getattr(db, 'flow_store', None)
+     resume = await owned(db, 'resumes', body.resume_id, uid)
+     if resume['parse_status'] != 'ready': raise HTTPException(409, '이력서가 평가 가능한 상태가 아닙니다.')
+     posting = await job(body.job_posting_id, request, uid)
+@@ -200,12 +216,23 @@ async def start(body: EvaluationRequest, request: Request, uid: str = Depends(us
+         if existing:
+             if existing[0]['input_fingerprint'] != fingerprint: raise HTTPException(409, '같은 중복방지 키가 다른 입력에 사용되었습니다.')
+             return {'run_id': existing[0]['id'], 'status': existing[0]['status']}
++    # Recovering an already accepted idempotent request creates no new work and
++    # must remain possible even if the worker stopped after completing it.
++    if flow is not None and flow.scope == 'shared':
++        try:
++            worker_health = await asyncio.to_thread(flow.status)
++        except Exception:
++            raise HTTPException(503, '분석 서비스 연결 상태를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.') from None
++        if not worker_health['worker']['available']:
++            raise HTTPException(503, '분석 워커가 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.')
+     companies = await db.select('companies', id=f"eq.{posting['company_id']}", limit=1) if posting.get('company_id') else []
+     finance = await financial_context(db, posting.get('company_id'), companies[0]['name'] if companies else '')
+     runs = await db.rpc('create_evaluation', {'p_user': uid, 'p_resume': str(body.resume_id), 'p_job': str(body.job_posting_id), 'p_rubric': rubric['id'],
+         'p_key': idempotency_key, 'p_fingerprint': fingerprint, 'p_model': config.openai_model,
+         'p_snapshot': {'resume': resume, 'job': posting, 'resume_hash': digest(resume['original_text']), 'job_hash': digest(posting['description']), 'finance': finance,
+                        'model_config': {'model': config.openai_model, 'embedding_model': config.embedding_model, 'embedding_dimensions': config.embedding_dimensions}}})
++    await asyncio.to_thread(link_run_source, runs[0]['id'], request.headers.get('X-CareerLens-Flow-Publisher'), store=getattr(db, 'flow_store', None))
++    await asyncio.to_thread(emit_server_event, runs[0]['id'], 'queue', 'pending', progress=0, store=getattr(db, 'flow_store', None))
+     return {'run_id': runs[0]['id'], 'status': runs[0]['status'], 'status_url': f"/api/v1/evaluations/{runs[0]['id']}"}
+ 
+ 
+@@ -253,6 +280,8 @@ async def cancel(run_id: UUID, request: Request, uid: str = Depends(user)):
+     db, _, _ = services(request)
+     await owned(db, 'evaluation_runs', run_id, uid)
+     rows = await db.update('evaluation_runs', {'status': 'cancelled'}, id=f'eq.{run_id}', user_id=f'eq.{uid}', status='in.(queued,running)')
++    if rows:
++        await asyncio.to_thread(emit_server_event, str(run_id), 'analysis', 'cancelled', store=getattr(db, 'flow_store', None))
+     if not rows: raise HTTPException(409, '이미 종료된 평가입니다.')
+     return {'run_id': str(run_id), 'status': 'cancelled'}
+ 
+diff --git a/app/application/evaluation.py b/app/application/evaluation.py
+index ead2af8c43ca5849b312d63455b8f0a026281e74..df46ffdc45c389ad54ffbdc97730ce4fd4a4882f 100644
+--- a/app/application/evaluation.py
++++ b/app/application/evaluation.py
+@@ -12,6 +12,8 @@ from app.modules.analysis.scoring.rubric import VERSION, CRITERIA
+ from app.modules.analysis.reporting.markdown import render
+ from app.modules.analysis.reporting.audit import render_execution_report, write_report
+ from app.retrieval.indexing.markdown import chunks, digest
++from app.core.telemetry import observe_tool
++from app.application.flow import observe_progress
+ 
+ 
+ async def active_rubric(db):
+@@ -28,6 +30,7 @@ async def progress(db, run_id, stage, message, percent, status='running', update
+     await db.insert('progress_events', {'run_id': run_id, 'stage': stage, 'status': status, 'message': message, 'progress_percent': percent})
+     if update_run:
+         await db.rpc('update_evaluation_progress', {'p_run': run_id, 'p_stage': stage, 'p_percent': percent})
++    await observe_progress(db, run_id, stage, message, percent, status)
+ 
+ 
+ async def execute(db, llm, config, run, checkpointer=None):
+@@ -44,6 +47,18 @@ async def execute(db, llm, config, run, checkpointer=None):
+     llm_calls = []
+     stage_timings = []
+     criterion_attempts = {}
++    tool_call_count = 0
++
++    async def record_tool_call(call):
++        nonlocal tool_call_count
++        tool_call_count += 1
++        criterion = criteria.get(call.get('criterion_code'))
++        await db.insert('intermediate_artifacts', {
++            'run_id': run_id, 'criterion_id': criterion['id'] if criterion else None,
++            'artifact_type': 'tool_call', 'artifact_version': tool_call_count,
++            'content': call, 'source_snapshot_id': snapshot['id'],
++            'schema_version': 'tool-call-v1',
++        })
+ 
+     async def record_timing(stage, started_at, duration_ms, status='completed',
+                             criterion_code=None, attempt_number=1, error_type=None):
+@@ -129,16 +144,19 @@ async def execute(db, llm, config, run, checkpointer=None):
+     await progress(db, run_id, 'parsing', '채용공고 구조화 완료', 12)
+     text_chunks = chunks(resume['original_text'], config.chunk_tokens, config.chunk_overlap)
+     embeddings = await measure(
+-        'resume_embedding', lambda: llm.embed([r['content'] for r in text_chunks]),
++        'resume_embedding', lambda: observe_tool(
++            'resume_embedding', lambda: llm.embed([r['content'] for r in text_chunks]),
++            record_tool_call, model=config.embedding_model,
++        ),
+     )
+     # Current-run source hash prevents retrieval from stale resume revisions.
+     await measure(
+         'index_save',
+-        lambda: db.upsert(
++        lambda: observe_tool('index_save', lambda: db.upsert(
+             'document_chunks',
+             [{**row, 'resume_id': resume['id'], 'embedding': vec, 'embedding_model': config.embedding_model, 'embedding_version': 'v1', 'indexing_status': 'ready'} for row, vec in zip(text_chunks, embeddings)],
+             'resume_id,chunk_index',
+-        ),
++        ), record_tool_call),
+     )
+     await progress(db, run_id, 'indexing', '이력서 근거 검색 준비 완료', 18)
+     finance = snapshot['financial_snapshot']
+@@ -196,9 +214,13 @@ async def execute(db, llm, config, run, checkpointer=None):
+         await record_criterion(code, f'{len(completed)}/12개 항목 검증 및 저장 완료', 1.0, 'completed')
+ 
+     async def search(state, code):
+-        query = await llm.embed([criteria[code]['name_ko'] + ' ' + ' '.join(parsed_job['technical_requirements'])])
+-        return await db.rpc('search_resume_chunks', {'p_resume_id': resume['id'], 'p_source_hash': digest(resume['original_text']),
+-                              'p_model': config.embedding_model, 'p_query': query[0], 'p_limit': 5})
++        query = await observe_tool('query_embedding',
++            lambda: llm.embed([criteria[code]['name_ko'] + ' ' + ' '.join(parsed_job['technical_requirements'])]),
++            record_tool_call, criterion_code=code, model=config.embedding_model)
++        return await observe_tool('vector_search',
++            lambda: db.rpc('search_resume_chunks', {'p_resume_id': resume['id'], 'p_source_hash': digest(resume['original_text']),
++                              'p_model': config.embedding_model, 'p_query': query[0], 'p_limit': 5}),
++            record_tool_call, criterion_code=code, model=config.embedding_model)
+ 
+     async def criterion_event(code, message, fraction, status='running'):
+         if code == 'all':
+@@ -214,7 +236,7 @@ async def execute(db, llm, config, run, checkpointer=None):
+         )
+ 
+     engine = EvaluationEngine(
+-        llm, trace, search, criterion_event, record_llm_call, record_criterion_timing,
++        llm, trace, search, criterion_event, record_llm_call, record_criterion_timing, record_tool_call,
+     )
+     graph = engine.build(checkpointer)
+     from zoneinfo import ZoneInfo
+diff --git a/app/core/config.py b/app/core/config.py
+index 3f567fdc6661ffcac447a21427fca3cd03fae653..0d1e660750b1377393b89b7f8ffc3fa26614a721 100644
+--- a/app/core/config.py
++++ b/app/core/config.py
+@@ -16,6 +16,7 @@ class Settings(BaseSettings):
+     supabase_service_role_key: SecretStr = SecretStr('')
+     supabase_db_url: SecretStr = SecretStr('')
+     app_env: str = 'development'
++    careerlens_flow_redis_url: SecretStr = SecretStr('')
+     auth_enabled: bool = True
+     admin_user_ids: str = ''
+     cors_origins: str = 'http://localhost:3000,http://localhost:5173'
+diff --git a/app/integrations/llm/client.py b/app/integrations/llm/client.py
+index ec0dc93b87aadfa3ac5a4696552910b65296f8fb..ce1365acdc1bf4f1ad58fc2be9c150ddfe9c835f 100644
+--- a/app/integrations/llm/client.py
++++ b/app/integrations/llm/client.py
+@@ -1,4 +1,5 @@
+ import asyncio
++import json
+ from hashlib import sha256
+ from time import perf_counter
+ from openai import AsyncOpenAI
+@@ -14,6 +15,13 @@ class LLM:
+     async def parse(self, schema, instruction: str, payload: str, audit=None, call_context=None):
+         started = perf_counter()
+         request_hash = sha256((instruction + '\0' + payload).encode('utf-8')).hexdigest()
++        provenance = {}
++        if audit:
++            provenance = {
++                'prompt_hash': sha256(instruction.encode('utf-8')).hexdigest(),
++                'schema_hash': sha256(json.dumps(schema.model_json_schema(), ensure_ascii=False,
++                    sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest(),
++            }
+         response = None
+         try:
+             if not self.config.openai_api_key.get_secret_value(): raise RuntimeError('OPENAI_API_KEY not configured')
+@@ -24,13 +32,13 @@ class LLM:
+             if response.output_parsed is None: raise ValueError('No structured output (refusal or incomplete response)')
+         except Exception as exc:
+             if audit:
+-                await audit({'context': call_context or {}, 'schema': schema.__name__, 'model': self.config.openai_model,
++                await audit({**provenance, 'context': call_context or {}, 'schema': schema.__name__, 'model': self.config.openai_model,
+                     'request_hash': request_hash, 'success': False, 'duration_ms': round((perf_counter() - started) * 1000),
+                     'error_type': type(exc).__name__})
+             raise
+         if audit:
+             parsed = response.output_parsed
+-            await audit({'context': call_context or {}, 'schema': schema.__name__, 'model': self.config.openai_model,
++            await audit({**provenance, 'context': call_context or {}, 'schema': schema.__name__, 'model': self.config.openai_model,
+                 'request_hash': request_hash, 'success': True, 'duration_ms': round((perf_counter() - started) * 1000),
+                 'response_text': response.output_text,
+                 'response_json': parsed.model_dump(mode='json') if hasattr(parsed, 'model_dump') else parsed,
+diff --git a/app/main.py b/app/main.py
+index 9824d41757382d61489d35a00068d96b22c7ec30..dacfba7a5a2a4fb22763174aca4007ae5c4b2992 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -6,6 +6,8 @@ from app.core.config import settings
+ from app.infrastructure.database.supabase import DB, DatabaseError
+ from app.integrations.llm.client import LLM
+ from app.api.v1.routes.api import router
++from app.api.v1.routes.flow import router as flow_router
++from app.application.flow import flow_store
+ 
+ 
+ @asynccontextmanager
+@@ -13,6 +15,8 @@ async def lifespan(app):
+     config = settings()
+     if not config.auth_enabled: raise RuntimeError('Authentication cannot be disabled for this backend')
+     app.state.config, app.state.db, app.state.llm = config, DB(config), LLM(config)
++    app.state.flow_store = flow_store(config)
++    app.state.db.flow_store = app.state.flow_store
+     yield
+     await app.state.db.close()
+     await app.state.llm.close()
+@@ -20,8 +24,9 @@ async def lifespan(app):
+ 
+ app = FastAPI(title='CareerLens Backend', version='0.1.0', lifespan=lifespan)
+ app.add_middleware(CORSMiddleware, allow_origins=[v.strip() for v in settings().cors_origins.split(',') if v.strip()],
+-                   allow_credentials=False, allow_methods=['GET', 'POST', 'DELETE'], allow_headers=['Authorization', 'Content-Type', 'Idempotency-Key', 'Last-Event-ID'])
++                   allow_credentials=False, allow_methods=['GET', 'POST', 'DELETE'], allow_headers=['Authorization', 'Content-Type', 'Idempotency-Key', 'Last-Event-ID', 'X-CareerLens-Flow-Publisher'])
+ app.include_router(router)
++app.include_router(flow_router)
+ 
+ 
+ @app.exception_handler(RuntimeError)
+diff --git a/requirements.lock.txt b/requirements.lock.txt
+index 904023ec8bfb9324e5168c5b15daa64a515dc93d..bb0a960a8de924d9efa2fc387f2e85fff9f11f5a 100644
+--- a/requirements.lock.txt
++++ b/requirements.lock.txt
+@@ -64,6 +64,7 @@ six==1.17.0
+ sniffio==1.3.1
+ soupsieve==2.10
+ starlette==1.7.0
++redis==6.4.0
+ tenacity==9.2.1
+ tiktoken==0.14.0
+ tqdm==4.70.1
+diff --git a/requirements.txt b/requirements.txt
+index a0d26ee8e16769d9a07605218f204c2ecb735746..2025f8d56814c01d7ddfb136e812bea29062ff47 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,6 +1,7 @@
+ fastapi>=0.115,<1
+ uvicorn[standard]>=0.30,<1
+ httpx>=0.28,<1
++redis>=5,<7
+ pydantic-settings>=2.7,<3
+ python-multipart>=0.0.20,<1
+ openai>=2,<3
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 72413fd24af25344dceeb0188cf245b63613bb5e..adcc3c13bb6f9bc517858acf3e810369e77f9cd1 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -8,8 +8,14 @@ from app.api.v1.routes.api import user
+ def test_health_and_auth_required():
+     with TestClient(app) as client:
+         assert client.get('/health').status_code == 200
+-        assert client.get('/api/v1/resumes').status_code == 401
+-        assert client.get('/api/v1/jobs').status_code == 401
++        for path in ['/me', '/resumes', '/jobs', '/jobs?include_details=true', '/evaluations', '/reports/' + str(uuid4()),
++                     '/admin/evaluation-performance', '/admin/evaluation-performance/' + str(uuid4()),
++                     '/flow/events', '/flow/sources', '/flow/status']:
++            assert client.get('/api/v1' + path).status_code == 401
++        assert client.delete('/api/v1/resumes/' + str(uuid4())).status_code == 401
++        assert client.post('/api/v1/evaluations', json={
++            'resume_id': str(uuid4()), 'job_posting_id': str(uuid4()),
++        }).status_code == 401
+ 
+ 
+ def test_markdown_upload_validation():
+@@ -65,6 +71,101 @@ def test_jobs_expose_markdown_source_identifiers_for_frontend_matching():
+         app.dependency_overrides.clear()
+ 
+ 
++def test_jobs_default_and_explicit_false_preserve_summary_projection():
++    calls = []
++
++    class FakeDB:
++        async def select(self, table, **params):
++            calls.append((table, params))
++            return []
++
++    app.dependency_overrides[user] = lambda: str(uuid4())
++    try:
++        with TestClient(app) as client:
++            original_db = app.state.db
++            try:
++                app.state.db = FakeDB()
++                for query in ['', '?include_details=false']:
++                    assert client.get('/api/v1/jobs' + query).json() == []
++            finally:
++                app.state.db = original_db
++        assert calls == [('job_postings', {
++            'select': 'id,company_id,title,career_min_months,education_level,source_name,source_external_id',
++            'order': 'collected_at.desc', 'limit': 20, 'offset': 0,
++        })] * 2
++    finally:
++        app.dependency_overrides.clear()
++
++
++def test_jobs_bulk_details_use_one_bounded_query_with_current_fields_and_company_name():
++    company_id = str(uuid4())
++    postings = [{
++        'id': str(uuid4()), 'company_id': company_id, 'title': '현재 공고',
++        'description': '현재 공고 본문', 'responsibilities': ['서비스 운영'],
++        'requirements': [{'name': 'Python'}], 'preferred_requirements': ['SQL'],
++        'career_min_months': 0, 'career_max_months': None, 'education_level': None,
++        'employment_type': '정규직', 'location': '부산', 'source_name': 'local_markdown',
++        'source_external_id': '001.md', 'source_url': '', 'companies': {'name': '현재 회사'},
++    }, {
++        'id': str(uuid4()), 'company_id': None, 'title': '기업 미연결 공고',
++        'description': '', 'responsibilities': [], 'requirements': [],
++        'preferred_requirements': [], 'career_min_months': None, 'career_max_months': 24,
++        'education_level': None, 'employment_type': None, 'location': None,
++        'source_name': None, 'source_external_id': None, 'source_url': None, 'companies': None,
++    }]
++    calls = []
++
++    class FakeDB:
++        async def select(self, table, **params):
++            calls.append((table, params))
++            return postings
++
++    app.dependency_overrides[user] = lambda: str(uuid4())
++    try:
++        with TestClient(app) as client:
++            original_db = app.state.db
++            try:
++                app.state.db = FakeDB()
++                response = client.get('/api/v1/jobs?include_details=true&limit=100&offset=100&company_id=' + company_id)
++            finally:
++                app.state.db = original_db
++        assert response.status_code == 200
++        assert response.json() == postings
++        assert len(calls) == 1
++        table, params = calls[0]
++        assert table == 'job_postings'
++        assert params['limit'] == 100 and params['offset'] == 100
++        assert params['company_id'] == f'eq.{company_id}'
++        assert params['order'] == 'collected_at.desc'
++        assert set(params['select'].split(',')) == {
++            'id', 'company_id', 'title', 'career_min_months', 'education_level',
++            'source_name', 'source_external_id', 'description', 'responsibilities',
++            'requirements', 'preferred_requirements', 'career_max_months',
++            'employment_type', 'location', 'source_url', 'companies(name)',
++        }
++    finally:
++        app.dependency_overrides.clear()
++
++
++def test_jobs_bulk_details_preserve_query_validation_without_database_reads():
++    class FakeDB:
++        async def select(self, table, **params):
++            raise AssertionError('Invalid query must not access the database')
++
++    app.dependency_overrides[user] = lambda: str(uuid4())
++    try:
++        with TestClient(app) as client:
++            original_db = app.state.db
++            try:
++                app.state.db = FakeDB()
++                for query in ['limit=0', 'limit=101', 'offset=-1', 'company_id=invalid', 'include_details=invalid']:
++                    assert client.get('/api/v1/jobs?include_details=true&' + query).status_code == 422
++            finally:
++                app.state.db = original_db
++    finally:
++        app.dependency_overrides.clear()
++
++
+ def test_evaluation_progress_returns_owned_run_and_events_after_cursor():
+     uid = str(uuid4())
+     run_id = str(uuid4())
+@@ -110,32 +211,105 @@ def test_evaluation_progress_returns_owned_run_and_events_after_cursor():
+         app.dependency_overrides.clear()
+ 
+ 
+-def test_performance_dashboard_is_admin_allowlist_only():
+-    uid = str(uuid4())
++def test_performance_dashboard_all_members_with_scope_and_freshness_metadata():
+     payload = {'summary': {'run_count': 1}, 'stages': [], 'runs': []}
++    calls = []
+ 
+     class FakeDB:
+         async def rpc(self, name, data):
+             assert name == 'get_evaluation_performance'
+             assert data == {'p_days': 7, 'p_run_limit': 100}
++            calls.append(data)
+             return payload
+ 
+-    app.dependency_overrides[user] = lambda: uid
++    with TestClient(app) as client:
++        original_db, original_config = app.state.db, app.state.config
++        try:
++            app.state.db = FakeDB()
++            app.dependency_overrides[user] = lambda: str(uuid4())
++            # Membership is sufficient; ADMIN_USER_IDS never restricts these reads.
++            for admin_ids, headers in [
++                ('', {}),
++                (str(uuid4()), {'Authorization': 'Bearer ordinary-member-test-token'}),
++                ('not-a-user-id', {'Authorization': 'Bearer another-member-test-token'}),
++            ]:
++                app.state.config = SimpleNamespace(admin_user_ids=admin_ids)
++                response = client.get('/api/v1/admin/evaluation-performance?days=7', headers=headers)
++                assert response.status_code == 200
++                result = response.json()
++                assert {key: result[key] for key in payload} == payload
++                assert result['scope'] == {'accounts': 'all', 'record_type': 'evaluation_runs',
++                                           'days': 7, 'run_limit': 100, 'sample_count': 0}
++                assert result['generated_at']
++                assert response.headers['cache-control'] == 'no-store'
++            assert len(calls) == 3
++        finally:
++            app.dependency_overrides.clear()
++            app.state.db, app.state.config = original_db, original_config
++
++
++def test_member_performance_dashboard_preserves_query_bounds():
++    calls = []
++
++    class FakeDB:
++        async def rpc(self, name, data):
++            assert name == 'get_evaluation_performance'
++            calls.append(data)
++            return {'summary': {}, 'stages': [], 'runs': []}
++
++    with TestClient(app) as client:
++        original_db = app.state.db
++        try:
++            app.dependency_overrides[user] = lambda: str(uuid4())
++            app.state.db = FakeDB()
++            for query in ['', '?days=1&run_limit=1', '?days=90&run_limit=200']:
++                assert client.get('/api/v1/admin/evaluation-performance' + query).status_code == 200
++            assert calls == [
++                {'p_days': 30, 'p_run_limit': 100},
++                {'p_days': 1, 'p_run_limit': 1},
++                {'p_days': 90, 'p_run_limit': 200},
++            ]
++            for query in ['days=0', 'days=91', 'days=bad', 'run_limit=0', 'run_limit=201', 'run_limit=bad']:
++                assert client.get('/api/v1/admin/evaluation-performance?' + query).status_code == 422
++            assert len(calls) == 3
++        finally:
++            app.dependency_overrides.clear()
++            app.state.db = original_db
++
++
++def test_member_dashboard_detail_is_bounded_and_never_calls_personal_endpoints(monkeypatch):
++    run_id = str(uuid4())
++    calls = []
++
++    async def detail(db, ident, settings=None):
++        calls.append(ident)
++        return {'id': ident, 'input': {'sha256': 'a' * 64}}
++
++    monkeypatch.setattr('app.api.v1.routes.api.build_run_detail', detail)
++    app.dependency_overrides[user] = lambda: str(uuid4())
+     try:
+         with TestClient(app) as client:
+-            original_db, original_config = app.state.db, app.state.config
+-            try:
+-                app.state.db = FakeDB()
+-                app.state.config = SimpleNamespace(admin_user_ids='')
+-                assert client.get('/api/v1/admin/evaluation-performance').status_code == 403
+-                app.state.config.admin_user_ids = 'not-a-user-id'
+-                assert client.get('/api/v1/admin/evaluation-performance').status_code == 503
+-                app.state.config.admin_user_ids = uid
+-                response = client.get('/api/v1/admin/evaluation-performance?days=7')
+-                assert response.status_code == 200
+-                assert response.json() == payload
+-                assert client.get('/api/v1/admin/evaluation-performance?days=100').status_code == 422
+-            finally:
+-                app.state.db, app.state.config = original_db, original_config
++            response = client.get('/api/v1/admin/evaluation-performance/' + run_id)
++            assert response.status_code == 200
++            assert response.json()['run']['id'] == run_id
++            assert response.headers['cache-control'] == 'no-store'
++            assert client.get('/api/v1/admin/evaluation-performance/not-a-uuid').status_code == 422
++            assert client.post('/api/v1/admin/evaluation-performance/' + run_id).status_code == 405
++            assert calls == [run_id]
++    finally:
++        app.dependency_overrides.clear()
++
++
++def test_dashboard_deleted_run_returns_not_found(monkeypatch):
++    async def detail(db, ident, settings=None):
++        return None
++
++    monkeypatch.setattr('app.api.v1.routes.api.build_run_detail', detail)
++    app.dependency_overrides[user] = lambda: str(uuid4())
++    try:
++        with TestClient(app) as client:
++            response = client.get('/api/v1/admin/evaluation-performance/' + str(uuid4()))
++            assert response.status_code == 404
++            assert response.json() == {'detail': '실행 기록이 없거나 삭제되었습니다.'}
+     finally:
+         app.dependency_overrides.clear()
+diff --git a/tests/test_evaluation_runtime.py b/tests/test_evaluation_runtime.py
+index a8642688cf2b3ff1f2e006bda80ebbcf64c1e2ad..56ff36f344b64573fbf8191842200103831cb75e 100644
+--- a/tests/test_evaluation_runtime.py
++++ b/tests/test_evaluation_runtime.py
+@@ -100,6 +100,8 @@ async def test_user_run_saves_separate_result_and_execution_reports(monkeypatch,
+         if table == 'intermediate_artifacts' and row['artifact_type'] == 'execution_report'
+     ]
+     timings = [row for table, row in db.inserted if table == 'evaluation_stage_timings']
++    tool_artifacts = [row for table, row in db.inserted
++                      if table == 'intermediate_artifacts' and row['artifact_type'] == 'tool_call']
+     user_report = reports[0]['report_text']
+     execution_report = execution_artifacts[0]['content']['markdown']
+ 
+@@ -111,6 +113,12 @@ async def test_user_run_saves_separate_result_and_execution_reports(monkeypatch,
+     assert 'evaluation_total' in execution_report
+     assert any(row['stage'] == 'execution_report_sql_save' for row in timings)
+     assert any(row['stage'] == 'execution_report_file_write' for row in timings)
++    assert [row['content']['name'] for row in tool_artifacts] == ['resume_embedding', 'index_save']
++    assert all(row['content']['status'] == 'completed' for row in tool_artifacts)
++    assert all(row['content']['result_count'] == 1 for row in tool_artifacts)
++    assert all(row['schema_version'] == 'tool-call-v1' for row in tool_artifacts)
++    assert all(resume_text not in str(row['content']) and job_text not in str(row['content'])
++               for row in tool_artifacts)
+     assert (FakeConfig.evaluation_report_dir / f'{run_id}.md').read_text(encoding='utf-8') == user_report
+     assert (
+         FakeConfig.evaluation_execution_report_dir / f'{run_id}.md'
+diff --git a/workers/evaluation.py b/workers/evaluation.py
+index 9edf41d3a97e27329c3cfcc3beea106e240b929c..beed9172f335859c02212ee4f98a50965adf4aad 100644
+--- a/workers/evaluation.py
++++ b/workers/evaluation.py
+@@ -8,6 +8,7 @@ from app.core.asyncio import run
+ from app.infrastructure.database.supabase import DB
+ from app.integrations.llm.client import LLM
+ from app.application.evaluation import execute, progress
++from app.application.flow import flow_store, emit_server_event
+ 
+ log = logging.getLogger('career_lens.worker')
+ 
+@@ -21,6 +22,8 @@ async def heartbeat(db, run_id, worker, config):
+ 
+ 
+ async def process(db, llm, config, run, worker, checkpointer):
++    await asyncio.to_thread(emit_server_event, run['id'], 'queue', 'complete', store=getattr(db, 'flow_store', None))
++    await asyncio.to_thread(emit_server_event, run['id'], 'analysis', 'running', progress=0, store=getattr(db, 'flow_store', None))
+     evaluation = asyncio.create_task(execute(db, llm, config, run, checkpointer))
+     pulse = asyncio.create_task(heartbeat(db, run['id'], worker, config))
+     try:
+@@ -28,6 +31,12 @@ async def process(db, llm, config, run, worker, checkpointer):
+         if pulse in done:
+             pulse.result()
+             evaluation.cancel()
++            # A lost lease can mean another worker reclaimed the run. Stopping
++            # this task is not proof the shared run was cancelled.
++            current = await db.select('evaluation_runs', id=f"eq.{run['id']}", select='status', limit=1)
++            state = {'completed': 'complete', 'partial': 'partial', 'failed': 'failed', 'cancelled': 'cancelled'}.get(current[0]['status']) if current else None
++            if state:
++                await asyncio.to_thread(emit_server_event, run['id'], 'analysis', state, store=getattr(db, 'flow_store', None))
+             return
+         if evaluation not in done: raise TimeoutError('Evaluation deadline exceeded')
+         result = evaluation.result()
+@@ -35,21 +44,57 @@ async def process(db, llm, config, run, worker, checkpointer):
+             'completed_at': datetime.now(timezone.utc).isoformat(), 'progress_percent': 100, 'current_stage': 'completed', 'lease_expires_at': None},
+             id=f"eq.{run['id']}", worker_id=f'eq.{worker}', status='eq.running')
+         if updated:
+-            await db.insert('progress_events', {'run_id': run['id'], 'stage': 'completed', 'status': 'completed', 'message': '평가 및 Markdown 보고서 완료', 'progress_percent': 100})
++            await asyncio.to_thread(emit_server_event, run['id'], 'analysis', 'partial' if result['scores']['validation_status'] == 'partial' else 'complete', progress=100, store=getattr(db, 'flow_store', None))
++            try:
++                await db.insert('progress_events', {'run_id': run['id'], 'stage': 'completed', 'status': 'completed', 'message': '평가 및 Markdown 보고서 완료', 'progress_percent': 100})
++            except Exception as error:
++                # Result and terminal run state already committed. A secondary
++                # progress-log outage must not relabel that success as failure.
++                log.warning('Completion progress log unavailable: type=%s', type(error).__name__)
+     except Exception as error:
+         # Do not log raw exception strings: providers may include credentials or resume text.
+         log.error('Evaluation failed: run=%s type=%s', run['id'], type(error).__name__)
+-        await db.update('evaluation_runs', {'status': 'failed', 'failure_reason': type(error).__name__, 'completed_at': datetime.now(timezone.utc).isoformat(), 'lease_expires_at': None},
++        failed = await db.update('evaluation_runs', {'status': 'failed', 'failure_reason': type(error).__name__, 'completed_at': datetime.now(timezone.utc).isoformat(), 'lease_expires_at': None},
+                         id=f"eq.{run['id']}", worker_id=f'eq.{worker}', status='eq.running')
++        if failed:
++            await asyncio.to_thread(emit_server_event, run['id'], 'analysis', 'failed', store=getattr(db, 'flow_store', None))
+     finally:
+         evaluation.cancel()
+         pulse.cancel()
+         await asyncio.gather(evaluation, pulse, return_exceptions=True)
+ 
+ 
++async def serve(db, llm, config, worker, saver):
++    failures = 0
++    while True:
++        try:
++            runs = await db.rpc('claim_evaluation', {'p_worker': worker, 'p_lease_seconds': config.worker_lease_seconds})
++            if runs:
++                await process(db, llm, config, runs[0], worker, saver)
++            failures = 0
++            if not runs:
++                await asyncio.sleep(config.worker_poll_seconds)
++        except Exception as error:
++            failures += 1
++            # A transient DB outage must not permanently kill the only consumer.
++            # Keep the process alive and let the database lease govern recovery.
++            log.warning('Worker connection retry: type=%s', type(error).__name__)
++            await asyncio.sleep(min(30, max(1, config.worker_poll_seconds) * 2 ** min(failures - 1, 4)))
++
++
++async def report_worker_health(store, worker):
++    while True:
++        try:
++            await asyncio.to_thread(store.worker_heartbeat, worker)
++        except Exception:
++            pass  # Observability outages do not stop existing evaluations.
++        await asyncio.sleep(5)
++
++
+ async def main():
+     config = settings()
+     db, llm = DB(config), LLM(config)
++    db.flow_store = flow_store(config)
+     worker = str(uuid4())
+     async with AsyncExitStack() as stack:
+         saver = None
+@@ -63,12 +108,12 @@ async def main():
+             await stack.enter_async_context(connection)
+             saver = AsyncPostgresSaver(connection)
+             # Set up separately with scripts.setup_checkpoints, not on every startup.
++        health = asyncio.create_task(report_worker_health(db.flow_store, worker))
+         try:
+-            while True:
+-                runs = await db.rpc('claim_evaluation', {'p_worker': worker, 'p_lease_seconds': config.worker_lease_seconds})
+-                if runs: await process(db, llm, config, runs[0], worker, saver)
+-                else: await asyncio.sleep(config.worker_poll_seconds)
++            await serve(db, llm, config, worker, saver)
+         finally:
++            health.cancel()
++            await asyncio.gather(health, return_exceptions=True)
+             await db.close()
+             await llm.close()
+ 
+diff --git a/app/api/v1/routes/flow.py b/app/api/v1/routes/flow.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c25056313810c014dd41dbc732d11c34a97f353
+--- /dev/null
++++ b/app/api/v1/routes/flow.py
+@@ -0,0 +1,79 @@
++"""Read-only observation is available to every authenticated member."""
++import asyncio
++import hashlib
++import json
++
++from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
++from app.api.v1.routes.api import user
++from app.application.flow import FlowRateLimited, clean_batch, cursor_key, flow_store
++
++router = APIRouter(prefix='/api/v1/flow', tags=['flow'])
++MAX_BODY = 131072
++
++
++def service(request):
++    return getattr(request.app.state, 'flow_store', None) or flow_store(request.app.state.config)
++
++
++async def invoke(request, method, *args):
++    try:
++        return await asyncio.to_thread(getattr(service(request), method), *args)
++    except FlowRateLimited:
++        raise HTTPException(429, '이용 흐름 전송이 많습니다. 잠시 후 다시 연결합니다.', headers={'Retry-After': '60'}) from None
++    except Exception:
++        raise HTTPException(503, '공유 이용 흐름 저장소에 연결할 수 없습니다. 서버 설정과 연결을 확인하세요.') from None
++
++
++@router.post('/events', status_code=202)
++async def publish(request: Request, response: Response):
++    # Guests may emit strictly allowlisted observations, never read other users.
++    # Do not trust proxy/client-supplied account IDs, source labels or source='backend'.
++    if 'application/json' not in request.headers.get('content-type', '').lower():
++        raise HTTPException(415, 'JSON 이용 흐름 메타데이터가 필요합니다.')
++    raw = bytearray()
++    async for chunk in request.stream():
++        raw.extend(chunk)
++        if len(raw) > MAX_BODY:
++            raise HTTPException(413, '이용 흐름 전송 크기를 초과했습니다.')
++    try:
++        batch = clean_batch(json.loads(raw))
++    except (ValueError, TypeError, UnicodeDecodeError):
++        raise HTTPException(422, '이용 흐름 메타데이터 형식이 올바르지 않습니다.') from None
++    if not batch:
++        raise HTTPException(422, '수집 가능한 이용 흐름 이벤트가 없습니다.')
++    address = request.client.host if request.client else 'unknown'
++    # Address is hashed, process/store-internal, and never returned in events.
++    # A reverse proxy/NAT can represent many legitimate users; size + per-source
++    # limits do most of the protection. Keep the coarse address ceiling generous.
++    await invoke(request, 'rate', 'ip:' + hashlib.sha256(address.encode()).hexdigest(), 120000)
++    await invoke(request, 'rate', batch[0]['publisher'], 240)
++    accepted = 0
++    for envelope in batch:
++        accepted += bool(await invoke(request, 'append', envelope))
++    response.headers['Cache-Control'] = 'no-store'
++    return {'accepted': accepted, 'source_id': batch[0]['publisher'], 'scope': service(request).scope, 'available': True}
++
++
++@router.get('/events')
++async def events(request: Request, response: Response, cursor: str | None = Query(None, max_length=40),
++                 limit: int = Query(200, ge=1, le=1000), uid: str = Depends(user)):
++    if cursor:
++        try:
++            cursor_key(cursor)
++        except ValueError:
++            raise HTTPException(422, '이용 흐름 재연결 위치가 올바르지 않습니다.') from None
++    response.headers['Cache-Control'] = 'no-store'
++    return await invoke(request, 'read', cursor, limit)
++
++
++@router.get('/sources')
++async def sources(request: Request, response: Response, limit: int = Query(100, ge=1, le=200),
++                  offset: int = Query(0, ge=0, le=5000), uid: str = Depends(user)):
++    response.headers['Cache-Control'] = 'no-store'
++    return await invoke(request, 'snapshots', offset, limit)
++
++
++@router.get('/status')
++async def status(request: Request, response: Response, uid: str = Depends(user)):
++    response.headers['Cache-Control'] = 'no-store'
++    return await invoke(request, 'status')
+diff --git a/app/application/dashboard.py b/app/application/dashboard.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac377bc75268abacbc526fddb581ffb4bd52a014
+--- /dev/null
++++ b/app/application/dashboard.py
+@@ -0,0 +1,338 @@
++"""Bounded, read-only operational metadata for the member dashboard.
++
++Never return stored document, report, evidence, issue-description or model-response
++text. Every response below is constructed from an explicit public field allowlist.
++"""
++import asyncio
++from datetime import datetime
++import math
++import re
++from uuid import UUID
++
++RUN_STATES = {'queued', 'running', 'completed', 'partial', 'failed', 'cancelled', 'skipped'}
++PHASES = {'document_parse', 'draft', 'evidence_review', 'independent_evaluation',
++          'disagreement_recheck', 'validation_repair', 'global_critic'}
++SCHEMAS = {'ParsedResume', 'ParsedJob', 'CriterionResult', 'CriticReview'}
++TOOL_NAMES = {'lexical_search', 'query_embedding', 'vector_search', 'resume_embedding', 'index_save'}
++ISSUE_TYPES = {'missing_evidence', 'conflicting_evidence', 'score_error',
++               'cross_domain_conflict', 'invalid_output', 'other'}
++RESOLUTIONS = {'open', 'rechecking', 'resolved', 'accepted_risk'}
++DOMAINS = ('resume_completeness', 'job_fit', 'qualifications', 'practical_competitiveness')
++CRITERION_CODES = {f'{domain}{number}' for domain in 'ABCD' for number in range(1, 4)}
++STAGES = {'parse_resume', 'parse_job', 'resume_embedding', 'index_save', 'criterion_evaluation',
++          'evaluation_graph', 'match_result_save', 'report_render', 'report_sql_save',
++          'report_file_write', 'evaluation_total', 'execution_report_render',
++          'execution_report_sql_save', 'execution_report_file_write'}
++VERSION_TOKEN = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,119}\Z')
++HASH = re.compile(r'[0-9a-fA-F]{64}\Z')
++
++
++def _record(value):
++    return value if isinstance(value, dict) else {}
++
++
++def _choice(value, choices):
++    return value if isinstance(value, str) and value in choices else None
++
++
++def _token(value):
++    return value if isinstance(value, str) and VERSION_TOKEN.fullmatch(value) else None
++
++
++def _uuid(value):
++    try:
++        return str(UUID(str(value))) if value is not None else None
++    except (ValueError, TypeError, AttributeError):
++        return None
++
++
++def _id(value):
++    return value if type(value) is int and value >= 0 else _uuid(value)
++
++
++def _hash(value):
++    return value.lower() if isinstance(value, str) and HASH.fullmatch(value) else None
++
++
++def _number(value, maximum=None):
++    # DB numeric JSON values are numbers, never turn arbitrary strings into metrics.
++    if isinstance(value, bool) or not isinstance(value, (int, float)):
++        return None
++    return value if math.isfinite(value) and value >= 0 and (maximum is None or value <= maximum) else None
++
++
++def _count(value):
++    return value if type(value) is int and value >= 0 else None
++
++
++def _time(value):
++    if not isinstance(value, str) or len(value) > 40:
++        return None
++    try:
++        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
++        return parsed.isoformat() if parsed.tzinfo else None
++    except ValueError:
++        return None
++
++
++def _availability(status, reason, **extra):
++    return {'status': status, 'reason': reason, **extra}
++
++
++async def _select(db, table, *, limit, **params):
++    try:
++        rows = await db.select(table, limit=limit + 1, **params)
++        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
++            raise ValueError('Invalid metadata rows')
++        return {'rows': rows[:limit], 'ok': True, 'truncated': len(rows) > limit}
++    except Exception:
++        # Upstream messages may contain credentials or private database details.
++        return {'rows': [], 'ok': False, 'truncated': False}
++
++
++def _state(query, missing):
++    if not query['ok']:
++        return _availability('unavailable', '저장소의 운영 기록을 현재 조회할 수 없습니다.')
++    if query['truncated']:
++        return _availability('partial', '표시 상한을 넘는 기록이 있어 일부만 표시합니다. 합계는 미확정입니다.', truncated=True)
++    if not query['rows']:
++        return _availability('not_recorded', missing)
++    return _availability('available', '해당 실행에 실제 저장된 기록입니다.')
++
++
++def _checkpoint_metadata(connection_string, thread_id):
++    """A short, SELECT-only connection; no LangGraph setup/schema creation."""
++    import psycopg
++    from psycopg.rows import dict_row
++    with psycopg.connect(connection_string, autocommit=True, connect_timeout=3,
++                         row_factory=dict_row, prepare_threshold=0,
++                         options='-c default_transaction_read_only=on -c statement_timeout=1500') as conn:
++        row = conn.execute('SELECT count(*) AS count FROM career_lens_checkpoints.checkpoints WHERE thread_id=%s',
++                           (thread_id,)).fetchone()
++        latest = conn.execute("SELECT checkpoint_id, checkpoint->>'ts' AS saved_at FROM career_lens_checkpoints.checkpoints WHERE thread_id=%s ORDER BY checkpoint_id DESC LIMIT 1",
++                              (thread_id,)).fetchone()
++    return {'status': 'available', 'count': _count(row['count']),
++            'latest_id': _uuid(latest['checkpoint_id']) if latest else None,
++            'latest_at': _time(latest['saved_at']) if latest else None}
++
++
++async def _checkpoints(settings, thread_id):
++    if not thread_id:
++        return {'status': 'not_recorded', 'count': None, 'latest_id': None, 'latest_at': None,
++                'reason': '실행에 저장된 그래프 스레드 식별자가 없습니다.'}
++    secret = getattr(settings, 'supabase_db_url', None) if settings is not None else None
++    connection_string = secret.get_secret_value() if hasattr(secret, 'get_secret_value') else ''
++    if not connection_string:
++        return {'status': 'unavailable', 'count': None, 'latest_id': None, 'latest_at': None,
++                'reason': '체크포인트 저장소 연결이 없어 실제 저장 여부를 확인하지 못했습니다.'}
++    try:
++        return await asyncio.wait_for(asyncio.to_thread(_checkpoint_metadata, connection_string, thread_id), timeout=6)
++    except Exception:
++        return {'status': 'unavailable', 'count': None, 'latest_id': None, 'latest_at': None,
++                'reason': '체크포인트 저장소의 메타데이터를 현재 조회할 수 없습니다.'}
++
++
++def _call(row):
++    # Aliases are projected by PostgREST; fallback supports local test fixtures.
++    content = _record(row.get('content'))
++    context = _record(row.get('call_context', content.get('context')))
++    usage = _record(row.get('usage', content.get('usage')))
++    success = row.get('success', content.get('success'))
++    return {'id': _uuid(row.get('id')), 'phase': _choice(context.get('phase'), PHASES),
++            'created_at': _time(row.get('created_at')),
++            'schema': _choice(row.get('call_schema', content.get('schema')), SCHEMAS),
++            'criterion_code': _choice(context.get('criterion_code'), CRITERION_CODES),
++            'model': _token(row.get('call_model', content.get('model'))),
++            'request_sha256': _hash(row.get('request_hash', content.get('request_hash'))),
++            'schema_sha256': _hash(row.get('schema_hash', content.get('schema_hash'))),
++            'prompt_sha256': _hash(row.get('prompt_hash', content.get('prompt_hash'))),
++            'success': success if type(success) is bool else None,
++            'duration_ms': _number(row.get('duration_ms', content.get('duration_ms'))),
++            'input_tokens': _count(usage.get('input_tokens')), 'output_tokens': _count(usage.get('output_tokens'))}
++
++
++def _sum_complete(rows, key, complete):
++    values = [row.get(key) for row in rows]
++    return sum(values) if complete and values and all(value is not None for value in values) else None
++
++
++async def build_run_detail(db, run_id, settings=None):
++    """Return a public-safe enriched run, or None when the run does not exist."""
++    ident = str(UUID(str(run_id)))
++    runs = await db.select('evaluation_runs', id=f'eq.{ident}', limit=1,
++                           select='id,status,created_at,started_at,completed_at,resume_id,job_posting_id,input_fingerprint,model_name,prompt_version,scoring_version,workflow_version,embedding_model,graph_thread_id')
++    if not runs:
++        return None
++    run = runs[0]
++    scope = {'run_id': f'eq.{ident}'}
++    specifications = {
++        'snapshot': ('evaluation_input_snapshots', 1, 'id,resume_id,job_posting_id,resume_hash,job_hash,snapshot_hash,input_format:resume_snapshot->parsed_data->>format,snapshot_model:model_config_snapshot->>model,snapshot_prompt:prompt_config_snapshot->>version'),
++        'stages': ('evaluation_stage_timings', 500, 'id,stage,criterion_code,attempt_number,status,started_at,completed_at,duration_ms'),
++        'nodes': ('node_executions', 200, 'id,node_name,criterion_id,status,attempt_number,duration_ms,model_name,node_version,started_at,completed_at'),
++        'criteria': ('criterion_results', 50, 'id,criterion_id,score,verdict,confidence,validation_status,attempt_count,evidence,evaluation_criteria(criterion_code,domain_code)'),
++        'issues': ('validation_issues', 200, 'id,criterion_id,issue_type,severity,resolution_status'),
++        'match': ('match_results', 1, 'id,resume_completeness,job_fit,qualifications,practical_competitiveness,overall_score,eligibility_status,validation_status'),
++        'artifacts': ('intermediate_artifacts', 500, 'id,artifact_type,schema_version,created_at,call_context:content->context,call_model:content->>model,call_schema:content->>schema,request_hash:content->>request_hash,schema_hash:content->>schema_hash,prompt_hash:content->>prompt_hash,success:content->success,duration_ms:content->duration_ms,usage:content->usage,tool_name:content->>name,tool_status:content->>status,tool_criterion:content->>criterion_code,tool_started_at:content->>started_at,result_count:content->result_count'),
++        'events': ('evaluation_events', 500, 'id,event_type,criterion_id,attempt_number,event_data'),
++    }
++    orders = {'stages': 'started_at.asc,id.asc', 'nodes': 'completed_at.asc,id.asc',
++              'artifacts': 'created_at.asc,id.asc', 'events': 'id.asc', 'issues': 'created_at.asc,id.asc'}
++    queries = await asyncio.gather(*(_select(db, table, limit=limit, select=fields, **scope,
++                                            **({'order': orders[name]} if name in orders else {}))
++                                    for name, (table, limit, fields) in specifications.items()))
++    data = dict(zip(specifications, queries))
++    snapshot = next(iter(data['snapshot']['rows']), {})
++    match = next(iter(data['match']['rows']), {})
++    reports_query = {'rows': [], 'ok': data['match']['ok'], 'truncated': False}
++    if _uuid(match.get('id')):
++        reports_query = await _select(db, 'analysis_reports', limit=20,
++            match_result_id=f"eq.{_uuid(match['id'])}", select='id,status,created_at,completed_at,report_text', order='created_at.desc')
++    reports = reports_query['rows']
++    report = next((r for r in reports if r.get('status') == 'completed'), reports[0] if reports else {})
++    criterion_map = {_uuid(row.get('criterion_id')): _choice(_record(row.get('evaluation_criteria')).get('criterion_code'), CRITERION_CODES)
++                     for row in data['criteria']['rows']}
++    criterion_map.pop(None, None)
++    criteria = [{'id': _uuid(row.get('id')), 'criterion_code': criterion_map.get(_uuid(row.get('criterion_id'))),
++                 'score': _number(row.get('score'), 100),
++                 'verdict': _choice(row.get('verdict'), {'met', 'not_met', 'unknown', 'not_applicable'}),
++                 'confidence': _number(row.get('confidence'), 1),
++                 'validation_status': _choice(row.get('validation_status'), {'pending', 'passed', 'needs_review', 'failed'}),
++                 'attempt_count': _count(row.get('attempt_count')),
++                 'evidence_count': len(row['evidence']) if isinstance(row.get('evidence'), list) else None}
++                for row in data['criteria']['rows']]
++    criteria.sort(key=lambda row: row['criterion_code'] or 'ZZ')
++    nodes = []
++    for row in data['nodes']['rows']:
++        code = criterion_map.get(_uuid(row.get('criterion_id')))
++        name = row.get('node_name')
++        if code is None and isinstance(name, str) and name.startswith('evaluate_'):
++            code = _choice(name[len('evaluate_'):], CRITERION_CODES)
++        nodes.append({'id': _uuid(row.get('id')), 'name': _choice(name, {f'evaluate_{c}' for c in CRITERION_CODES} | set(DOMAINS) | {'global_critic', 'targeted_recheck', 'calculate'}),
++                      'criterion_code': code, 'status': _choice(row.get('status'), RUN_STATES),
++                      'attempt_number': _count(row.get('attempt_number')), 'duration_ms': _number(row.get('duration_ms')),
++                      'model': _token(row.get('model_name')), 'version': _token(row.get('node_version')),
++                      'started_at': _time(row.get('started_at')), 'completed_at': _time(row.get('completed_at'))})
++    stages = [{'stage': _choice(row.get('stage'), STAGES), 'criterion_code': _choice(row.get('criterion_code'), CRITERION_CODES),
++               'criterion_applicability': 'not_applicable' if row.get('stage') in {'parse_resume', 'parse_job'} else 'criterion' if row.get('criterion_code') in CRITERION_CODES else 'run',
++               'attempt_number': _count(row.get('attempt_number')), 'status': _choice(row.get('status'), RUN_STATES),
++               'duration_ms': _number(row.get('duration_ms')), 'started_at': _time(row.get('started_at')),
++               'completed_at': _time(row.get('completed_at'))} for row in data['stages']['rows']]
++    artifacts = data['artifacts']['rows']
++    calls = [_call(row) for row in artifacts if row.get('artifact_type') == 'llm_call']
++    schemas = sorted({_token(row.get('schema_version')) for row in artifacts if _token(row.get('schema_version'))})
++    hashes = [{'call_id': row['id'], 'schema': row['schema'], 'phase': row['phase'],
++               'criterion_code': row['criterion_code'], 'sha256': row['request_sha256']}
++              for row in calls if row['request_sha256']]
++    unique_hashes = {row['sha256'] for row in hashes}
++    calls_complete = data['artifacts']['ok'] and not data['artifacts']['truncated']
++    model = _token(run.get('model_name')) or _token(snapshot.get('snapshot_model'))
++    issues = [{'id': _uuid(row.get('id')), 'type': _choice(row.get('issue_type'), ISSUE_TYPES),
++               'status': _choice(row.get('resolution_status'), RESOLUTIONS),
++               'severity': _choice(row.get('severity'), {'low', 'medium', 'high', 'critical'}),
++               'criterion_code': criterion_map.get(_uuid(row.get('criterion_id')))} for row in data['issues']['rows']]
++    issues_complete = data['issues']['ok'] and not data['issues']['truncated']
++    unresolved = sum(row['status'] in {'open', 'rechecking'} for row in issues) if issues_complete and all(row['status'] for row in issues) else None
++    attempts = [row['attempt_count'] for row in criteria]
++    retries = sum(value - 1 for value in attempts) if attempts and all(value is not None and value >= 1 for value in attempts) and data['criteria']['ok'] and not data['criteria']['truncated'] else None
++    validation_status = _choice(match.get('validation_status'), {'pending', 'passed', 'partial', 'failed'})
++    revalidation = 'not_rechecked' if retries == 0 else ('issues_remaining' if unresolved else 'passed' if validation_status == 'passed' else 'recorded') if retries else None
++    retrieval_events = []
++    for row in data['events']['rows']:
++        if row.get('event_type') != 'retrieval':
++            continue
++        event = _record(row.get('event_data'))
++        retrieval_events.append({'id': _id(row.get('id')), 'name': _choice(event.get('tool_name'), {'search_resume_chunks', 'lexical_search'}) or 'retrieval',
++            'criterion_code': criterion_map.get(_uuid(row.get('criterion_id'))),
++            'attempt_number': _count(row.get('attempt_number')), 'status': _choice(event.get('status'), RUN_STATES),
++            'result_count': _count(event.get('retrieved_count')), 'duration_ms': _number(event.get('duration_ms'))})
++    tool_calls = []
++    for row in artifacts:
++        if row.get('artifact_type') != 'tool_call':
++            continue
++        content = _record(row.get('content'))
++        tool_calls.append({'id': _uuid(row.get('id')),
++            'name': _choice(row.get('tool_name', content.get('name')), TOOL_NAMES),
++            'status': _choice(row.get('tool_status', content.get('status')), {'completed', 'failed', 'cancelled'}),
++            'criterion_code': _choice(row.get('tool_criterion', content.get('criterion_code')), CRITERION_CODES),
++            'started_at': _time(row.get('tool_started_at', content.get('started_at'))),
++            'duration_ms': _number(row.get('duration_ms', content.get('duration_ms'))),
++            'result_count': _count(row.get('result_count', content.get('result_count'))),
++            'model': _token(row.get('call_model', content.get('model'))), 'source': 'stored_tool_call_audit'})
++    stored_retrieval = [row for row in tool_calls if row['name'] in {'lexical_search', 'vector_search'}]
++    memory_retrieval = stored_retrieval or retrieval_events
++    checkpoints = await _checkpoints(settings, _uuid(run.get('graph_thread_id')))
++    has_checkpoints = checkpoints.get('count') is not None and checkpoints['count'] > 0
++    input_format = _choice(snapshot.get('input_format'), {'markdown', 'md', 'pdf', 'docx', 'text', 'txt'})
++    fingerprint = _hash(run.get('input_fingerprint')) or _hash(snapshot.get('snapshot_hash'))
++    fingerprint_source = 'evaluation_runs.input_fingerprint' if _hash(run.get('input_fingerprint')) else 'evaluation_input_snapshots.snapshot_hash' if fingerprint else None
++    compatibility_complete = bool(match) and data['criteria']['ok'] and not data['criteria']['truncated']
++    incompatibilities = sum(_number(match.get(key), 100) is None for key in (*DOMAINS, 'overall_score'))
++    incompatibilities += int(match.get('eligibility_status') not in {'met', 'not_met'})
++    incompatibilities += sum(row['score'] is None or row['verdict'] not in {'met', 'not_met'} for row in criteria)
++    sources = {
++        'model': '평가 생성 당시 api.py의 start가 config.openai_model을 create_evaluation에 전달해 evaluation_runs.model_name과 입력 스냅샷에 저장합니다. 저장된 값만 읽으며 현재 환경 설정으로 대체하지 않습니다.',
++        'prompt_version': 'migrations/002_latest_evaluation_wins.sql의 create_evaluation은 career-lens-v1을 명시해 prompt_version과 prompt_config_snapshot에 저장합니다. 이 화면은 저장된 표식을 읽습니다. 표식만으로 당시 프롬프트 본문의 동일성을 확인할 수는 없습니다.',
++        'schema_version': 'intermediate_artifacts.schema_version에 저장된 기록 형식 버전입니다. 현재 application/evaluation.py는 평가 산출물에 scoring.VERSION, 도구 기록에 tool-call-v1을 저장합니다. 과거 값도 그대로 표시합니다. 호출의 schema는 출력 자료형 이름이고 schema_sha256은 실제 JSON 출력 스키마 해시입니다.',
++        'input_sha256': 'api.py의 start가 resume_id, job_id, resume_hash, job_hash, rubric_id, scoring, model을 키 정렬한 JSON의 SHA-256으로 input_fingerprint를 만들고 snapshot_hash에도 저장합니다. 단일 파일 해시가 아닙니다.',
++        'request_sha256': 'integrations/llm/client.py가 호출별 instruction + NUL + payload의 UTF-8 SHA-256을 저장합니다. 모델·JSON 스키마·기타 요청 옵션은 이 해시에 포함되지 않으며 별도 기록을 확인해야 합니다. 여러 호출을 하나의 해시로 합치지 않습니다.',
++        'prompt_sha256': 'integrations/llm/client.py가 실제 system instruction의 UTF-8 SHA-256을 저장합니다. 계측 추가 이전 호출은 값이 없습니다.',
++        'schema_sha256': 'integrations/llm/client.py가 실제 Pydantic model_json_schema를 키 정렬·공백 없는 JSON으로 직렬화한 UTF-8 SHA-256을 저장합니다. 기록 형식 버전 문자열과는 다릅니다.',
++    }
++    availability = {
++        'input': _state(data['snapshot'], '입력 스냅샷의 부가 기록이 없습니다. 실행에 저장된 식별자는 별도로 표시합니다.'),
++        'reproduction': _state(data['artifacts'], '산출물 스키마·LLM 요청 감사 기록이 없습니다. 실행에 저장된 모델·프롬프트 버전은 별도로 표시합니다.'),
++        'nodes': _state(data['nodes'], '저장된 노드 실행 기록이 없습니다. 노드가 실행되지 않았다는 뜻은 아닙니다.'),
++        'stages': _state(data['stages'], '이 실행에는 단계별 시간 계측 기록이 없습니다.'),
++        'validation': _state(data['issues'], '저장된 전역 검증 이슈는 0개입니다. 항목별 검증 상태는 별도로 표시합니다.'),
++        'scores': _state(data['match'], '저장된 최종 점수 결과가 없습니다.'),
++        'persistence': _state(reports_query, '저장된 보고서 행을 찾지 못했습니다.'),
++        'llm': _state(data['artifacts'], 'LLM 호출 감사 기록이 없습니다. 과거 실행의 호출 횟수·토큰을 0으로 추정하지 않습니다.'),
++        'tools': _availability('available', '실제 저장된 도구 호출 감사 기록 또는 retrieval 이벤트만 표시합니다.') if tool_calls or retrieval_events else _availability('not_recorded' if data['events']['ok'] and data['artifacts']['ok'] else 'unavailable', '도구 호출 기록이 저장되지 않았습니다. 평가에서 사용한 도구를 단계 이름으로 추정하지 않습니다.'),
++        'memory': _availability('available' if has_checkpoints or memory_retrieval else 'partial' if _uuid(run.get('graph_thread_id')) else 'not_recorded', '그래프 스레드는 실행에 저장된 ID이며 체크포인트 존재와는 별개입니다. 검색 개수는 실제 도구 감사 기록 또는 retrieval 이벤트에 저장된 반환 개수의 합이며, 중복을 제거한 문서 수는 아닙니다.'),
++        'cost': _availability('not_recorded', '비용 및 요금 기준을 저장하는 계측이 없습니다. 토큰 수로 비용을 추정하지 않습니다.'),
++    }
++    if not calls and data['artifacts']['ok']:
++        availability['llm'] = _availability('not_recorded', '산출물은 있으나 LLM 호출 감사 기록이 없습니다. 호출하지 않았다는 뜻은 아닙니다.')
++    if nodes and all(row['duration_ms'] is None for row in nodes):
++        availability['nodes']['reason'] = '노드 완료 기록만 저장되어 별도 실행 시간은 미측정입니다. 위 단계 기록의 criterion_evaluation 시간을 확인하세요.'
++    if issues_complete and not issues:
++        availability['validation'] = _availability('available', '조회한 전역 검증 이슈 기록은 0개입니다. 항목별 검증 상태나 검증 통과 여부와는 별개입니다.')
++    availability['input_type'] = _availability('available', '평가 당시 입력 스냅샷의 parsed_data.format 값입니다. 변환 전 원본 업로드 파일 형식과는 다를 수 있습니다.') if input_format else _availability('not_recorded', '입력 스냅샷에 저장된 문서 형식을 확인하지 못했습니다. 확장자나 현재 처리 방식으로 추정하지 않습니다.')
++    return {
++        'id': ident, 'status': _choice(run.get('status'), RUN_STATES), 'created_at': _time(run.get('created_at')),
++        'started_at': _time(run.get('started_at')), 'completed_at': _time(run.get('completed_at')),
++        'input': {'resume_id': _uuid(run.get('resume_id')), 'job_posting_id': _uuid(run.get('job_posting_id')),
++                  'type': input_format, 'sha256': fingerprint, 'hash_kind': 'evaluation_fingerprint' if fingerprint else None, 'hash_source': fingerprint_source,
++                  'resume_sha256': _hash(snapshot.get('resume_hash')), 'job_sha256': _hash(snapshot.get('job_hash'))},
++        'reproduction': {'model': model, 'prompt_version': _token(run.get('prompt_version')) or _token(snapshot.get('snapshot_prompt')),
++                         'schema_version': schemas[0] if len(schemas) == 1 else None, 'schema_versions': schemas,
++                         'request_sha256': next(iter(unique_hashes)) if len(calls) == 1 and len(unique_hashes) == 1 and calls_complete else None,
++                         'request_hashes': hashes, 'scoring_version': _token(run.get('scoring_version')),
++                         'workflow_version': _token(run.get('workflow_version')), 'version_sources': sources},
++        'nodes': nodes, 'tools': tool_calls or retrieval_events or None,
++        'memory': {'kind': 'retrieval_and_checkpoint' if memory_retrieval and has_checkpoints else 'retrieval' if memory_retrieval else 'postgres_checkpoint' if has_checkpoints else None,
++                   'retrieved_count': _sum_complete(memory_retrieval, 'result_count', data['artifacts']['ok'] and not data['artifacts']['truncated'] if stored_retrieval else data['events']['ok'] and not data['events']['truncated']),
++                   'graph_thread_id': _uuid(run.get('graph_thread_id')), 'checkpoint_id': checkpoints.get('latest_id'),
++                   'checkpoint_count': checkpoints.get('count'), 'checkpoints': checkpoints, 'retrieval_events': memory_retrieval},
++        'validation': {'status': validation_status, 'retry_count': retries, 'retry_scope': 'criterion_re-evaluation',
++                       'unresolved_issue_count': unresolved, 'revalidation_status': revalidation, 'issues': issues,
++                       'issue_scope': 'stored_global_validation_issues', 'global_issue_count': len(issues) if issues_complete else None,
++                       'criterion_count': len(criteria) if data['criteria']['ok'] and not data['criteria']['truncated'] else None,
++                       'criterion_status_counts': {status: sum(row['validation_status'] == status for row in criteria) for status in ('pending', 'passed', 'needs_review', 'failed')} if data['criteria']['ok'] and not data['criteria']['truncated'] else None,
++                       'criterion_issue_count': sum(r['validation_status'] == 'needs_review' for r in criteria) if criteria and data['criteria']['ok'] and not data['criteria']['truncated'] else None},
++        'scores': {**{key: _number(match.get(key), 100) for key in (*DOMAINS, 'overall_score')},
++                   'eligibility_status': _choice(match.get('eligibility_status'), {'met', 'not_met', 'unknown', 'not_applicable'}), 'criteria': criteria},
++        'llm': {'model': model, 'call_count': len(calls) if calls and calls_complete else None,
++                'input_tokens': _sum_complete(calls, 'input_tokens', calls_complete), 'output_tokens': _sum_complete(calls, 'output_tokens', calls_complete),
++                'cost': None, 'source': 'stored_llm_call_audits' if calls else None, 'calls': calls},
++        'persistence': {'report_id': _uuid(report.get('id')), 'status': _choice(report.get('status'), RUN_STATES),
++                        'saved_at': _time(report.get('completed_at')) or _time(report.get('created_at')),
++                        'stored': bool(reports) if reports_query['ok'] else None,
++                        'has_body': bool(report['report_text'].strip()) if isinstance(report.get('report_text'), str) else False if report and report.get('report_text') is None else None,
++                        'retrievable': None, 'retrievable_reason': '소유자 인증이 필요한 보고서 API의 실제 재조회는 별도 확인해야 합니다.',
++                        'result_schema_compatible': incompatibilities == 0 if compatibility_complete else None,
++                        'compatibility_scope': 'stored_score_and_verdict_fields',
++                        'incompatibility_count': incompatibilities if compatibility_complete else None,
++                        'report_count': len(reports) if reports_query['ok'] and not reports_query['truncated'] else None},
++        'stages': stages, 'availability': availability,
++    }
+diff --git a/app/application/flow.py b/app/application/flow.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cdb8398907aba3e2aee3e08be5196b448ca7332
+--- /dev/null
++++ b/app/application/flow.py
+@@ -0,0 +1,457 @@
++"""Bounded operational metadata, shared by API, workers and guest execution.
++
++No documents, account IDs, URLs, free-form labels or error strings enter this store.
++Redis is required in production; memory is an explicitly process-local dev fallback.
++"""
++import asyncio
++import copy
++import hashlib
++import json
++import math
++import re
++import threading
++import time
++from collections import OrderedDict, deque
++from functools import lru_cache
++from uuid import UUID, uuid4
++
++NODES = frozenset(('visit auth resume role posting api_auth api_resume api_jobs api_evaluation '
++    'api_report queue analysis report signup logout session cancel history dashboard evaluate '
++    'api_signup api_session api_cancel api_dashboard api_convert input_check local_data notice '
++    'storage_ack parse_resume parse_job indexing domain_a domain_b domain_c domain_d validation '
++    'scoring database api_guest_service api_guest_analysis api_guest_claim api_guest_reports '
++    'guest_store report_lock guest_claim result_delivery guest_cleanup').split())
++STATES = frozenset('pending running complete failed cancelled partial blocked waiting expired cleared empty'.split())
++KINDS = frozenset('action request navigation progress session'.split())
++INTERNAL = frozenset('queue analysis parse_resume parse_job indexing domain_a domain_b domain_c domain_d validation scoring database guest_store'.split())
++RETENTION_SECONDS = 86400
++MAX_SOURCES = 5000
++MAX_EVENTS = 50000
++PREFIX = 'careerlens:flow:v1:'
++
++
++class FlowUnavailable(Exception):
++    pass
++
++
++class FlowRateLimited(Exception):
++    pass
++
++
++def number(value, maximum):
++    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= maximum and math.isfinite(value) else None
++
++
++def identifier(value):
++    try:
++        return str(UUID(str(value)))
++    except (ValueError, TypeError, AttributeError):
++        raise ValueError('Invalid flow identifier') from None
++
++
++def clean_event(raw, *, server=False):
++    if not isinstance(raw, dict) or raw.get('node') not in NODES or raw.get('state') not in STATES or raw.get('kind') not in KINDS:
++        return None
++    if raw.get('source') == 'demo' or raw.get('sessionMode') == 'demo':
++        return None
++    ident = raw.get('id')
++    if not isinstance(ident, str) or not re.fullmatch(r'(?:event|request|server)-[0-9]{1,16}', ident):
++        return None
++    event = {key: raw[key] for key in ('id', 'node', 'kind', 'state')}
++    event.update(source='backend' if server else 'observed', at=number(raw.get('at'), 10**14) or int(time.time() * 1000),
++                 durationMs=number(raw.get('durationMs'), 86400000), progress=number(raw.get('progress'), 100))
++    if raw.get('method') in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE'):
++        event['method'] = raw['method']
++    if raw.get('sessionMode') in ('guest', 'member'):
++        event['sessionMode'] = raw['sessionMode']
++    if raw.get('execution') == 'guest':
++        event['execution'] = 'guest'
++    criterion = raw.get('criterion')
++    if isinstance(criterion, str) and re.fullmatch('[A-D][1-3]', criterion) and raw['node'] == 'domain_' + criterion[0].lower():
++        event['criterion'] = criterion
++    return event
++
++
++def clean_batch(body):
++    if not isinstance(body, dict):
++        raise ValueError('Invalid flow batch')
++    stream, publisher = identifier(body.get('stream')), 'browser:' + identifier(body.get('publisher'))
++    batch = body.get('batch')
++    if not isinstance(batch, list) or not 1 <= len(batch) <= 25:
++        raise ValueError('Invalid flow batch')
++    result = []
++    for raw in batch:
++        if not isinstance(raw, dict) or raw.get('kind') not in ('event', 'snapshot', 'active', 'disconnected'):
++            continue
++        if isinstance(raw.get('session'), dict) and raw['session'].get('mode') == 'demo':
++            continue
++        revision = raw.get('revision')
++        if not isinstance(revision, int) or isinstance(revision, bool) or not 0 < revision < 2**53:
++            continue
++        envelope = {'kind': raw['kind'], 'publisher': publisher, 'stream': stream, 'revision': revision,
++                    'at': int(time.time() * 1000), 'active': raw.get('active') is True,
++                    'client_dropped': int(number(body.get('client_dropped'), 10**9) or 0)}
++        if raw['kind'] == 'event':
++            event = clean_event(raw.get('event'))
++            if event is None:
++                continue
++            envelope['event'] = event
++        if raw['kind'] == 'snapshot':
++            for field in ('events', 'states'):
++                values = raw.get(field, [])
++                envelope[field] = [event for row in values[-100:] if (event := clean_event(row))] if isinstance(values, list) else []
++            mode = raw.get('session', {}).get('mode') if isinstance(raw.get('session'), dict) else None
++            envelope['session'] = {'mode': mode if mode in ('member', 'guest') else 'guest'}
++        result.append(envelope)
++    return result
++
++
++def update_snapshot(previous, envelope):
++    snap = copy.deepcopy(previous or {'events': [], 'states': [], 'session': {'mode': 'guest'}})
++    snap.update({key: envelope[key] for key in ('publisher', 'stream', 'revision', 'at')})
++    snap['kind'] = 'snapshot'
++    snap['connected'] = envelope['kind'] != 'disconnected'
++    if 'client_dropped' in envelope:
++        snap['client_dropped'] = envelope['client_dropped']
++    if envelope.get('related_publisher'):
++        snap['related_publisher'] = envelope['related_publisher']
++    if envelope['kind'] == 'snapshot':
++        snap.update({key: envelope[key] for key in ('events', 'states', 'session')})
++    if envelope['kind'] == 'event':
++        event = envelope['event']
++        snap['events'] = [row for row in snap['events'] if row['id'] != event['id']][-99:] + [event]
++        snap['states'] = [row for row in snap['states'] if row['node'] != event['node']] + [event]
++        if event.get('sessionMode'):
++            snap['session'] = {'mode': event['sessionMode']}
++        if event['node'] == 'analysis' and event['state'] in ('complete', 'partial', 'failed', 'cancelled'):
++            snap['states'] = [row for row in snap['states'] if row['node'] == 'analysis' or row['node'] not in INTERNAL or row['state'] not in ('pending', 'running')]
++    return snap
++
++
++class MemoryFlowStore:
++    scope = 'process'
++
++    def __init__(self, *, maximum=MAX_EVENTS, source_limit=MAX_SOURCES, now=time.time):
++        self.lock, self.now = threading.RLock(), now
++        self.events, self.sources, self.rates, self.links = deque(maxlen=maximum), {}, OrderedDict(), OrderedDict()
++        self.source_limit, self.sequence = source_limit, 0
++        self.epoch = int(now() * 1000)
++
++    def _prune(self):
++        cutoff = self.now() * 1000 - RETENTION_SECONDS * 1000
++        while self.events and self.events[0]['envelope']['at'] < cutoff:
++            self.events.popleft()
++        self.sources = {key: row for key, row in self.sources.items() if row['at'] >= cutoff}
++
++    def rate(self, key, limit):
++        with self.lock:
++            window = int(self.now() // 60)
++            count, old = self.rates.get(key, (0, window))
++            count = count + 1 if window == old else 1
++            self.rates[key] = (count, window)
++            self.rates.move_to_end(key)
++            while len(self.rates) > 10000:
++                self.rates.popitem(last=False)
++            if count > limit:
++                raise FlowRateLimited()
++
++    def append(self, envelope, *, server=False):
++        with self.lock:
++            self._prune()
++            previous = self.sources.get(envelope['publisher'])
++            if server:
++                states = {row['node']: row for row in (previous or {}).get('states', [])}
++                analysis = states.get('analysis', {})
++                terminal = analysis.get('state') in ('complete', 'partial', 'failed', 'cancelled')
++                event = envelope['event']
++                # A committed cancellation/deletion wins over a delayed completion
++                # callback. Repeated finals cannot replay lights on an idle run.
++                if terminal and not (event['node'] == 'analysis' and event['state'] == 'cancelled' and analysis['state'] != 'cancelled'):
++                    return False
++                if event['node'] == 'queue' and event['state'] == 'pending' and ('queue' in states or analysis):
++                    return False
++                envelope = copy.deepcopy(envelope)
++                if event['node'] == 'analysis' and event['state'] == 'running' and isinstance(event.get('progress'), (int, float)) and isinstance(analysis.get('progress'), (int, float)):
++                    envelope['event']['progress'] = max(event['progress'], analysis['progress'])
++                envelope['revision'] = (previous or {}).get('revision', 0) + 1
++                envelope['event']['id'] = 'server-' + str(envelope['revision'])
++            elif previous and envelope['revision'] <= previous['revision']:
++                return False
++            self.sequence += 1
++            ident = f'{self.epoch}-{self.sequence}'
++            self.events.append({'id': ident, 'envelope': copy.deepcopy(envelope)})
++            self.sources[envelope['publisher']] = update_snapshot(previous, envelope)
++            if len(self.sources) > self.source_limit:
++                oldest = min(self.sources, key=lambda key: self.sources[key]['at'])
++                del self.sources[oldest]
++            return True
++
++    def read(self, cursor=None, limit=200):
++        with self.lock:
++            self._prune()
++            rows = list(self.events)
++            keys = [row['id'] for row in rows]
++            gap = bool(cursor and cursor not in ('0-0', f'{self.epoch}-0') and
++                       ((rows and (cursor_key(cursor) < cursor_key(keys[0]) or cursor_key(cursor) > cursor_key(keys[-1])))
++                        or (not rows and cursor != f'{self.epoch}-{self.sequence}')))
++            newer = [row for row in rows if not cursor or gap or cursor_key(row['id']) > cursor_key(cursor)]
++            page = newer[:limit]
++            return {'events': copy.deepcopy(page), 'cursor': page[-1]['id'] if page else (cursor or f'{self.epoch}-{self.sequence}'),
++                    'has_more': len(newer) > limit, 'gap': gap, 'scope': self.scope, 'available': True}
++
++    def snapshots(self, offset=0, limit=100):
++        with self.lock:
++            self._prune()
++            # Activity timestamps change while paging. Stable publisher ordering
++            # prevents a busy older source jumping over the observer's offset.
++            rows = sorted(self.sources.values(), key=lambda row: row['publisher'])
++            return {'sources': copy.deepcopy(rows[offset:offset + limit]), 'total': len(rows), 'has_more': len(rows) > offset + limit,
++                    'cursor': f'{self.epoch}-{self.sequence}', 'scope': self.scope, 'available': True}
++
++    def status(self):
++        return {'available': True, 'scope': self.scope, 'retention_seconds': RETENTION_SECONDS, 'max_events': MAX_EVENTS, 'max_sources': MAX_SOURCES,
++                'worker': {'known': False, 'available': None, 'count': None}}
++
++    def worker_heartbeat(self, worker):
++        # A process-local store cannot attest a separate worker process's health.
++        return None
++
++    def link(self, source, publisher):
++        with self.lock:
++            self.links[source] = (publisher, self.now())
++            self.links.move_to_end(source)
++            while len(self.links) > self.source_limit:
++                self.links.popitem(last=False)
++
++    def related(self, source):
++        with self.lock:
++            row = self.links.get(source)
++            return row[0] if row and self.now() - row[1] < RETENTION_SECONDS else None
++
++
++def cursor_key(value):
++    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{1,16}-[0-9]{1,16}', value):
++        raise ValueError('Invalid flow cursor')
++    return tuple(map(int, value.split('-')))
++
++
++# All source state updates and the global cursor commit together. Redis clients in
++# separate API/worker processes cannot overwrite concurrent domain progress.
++APPEND_LUA = r'''
++local env = cjson.decode(ARGV[1])
++local old = redis.call('HGET', KEYS[2], env.publisher)
++local prev = old and cjson.decode(old) or {events={}, states={}, session={mode='guest'}, revision=0}
++if ARGV[2] == '1' then
++ local analysis=nil; local queue=nil; for _,e in ipairs(prev.states) do if e.node=='analysis' then analysis=e elseif e.node=='queue' then queue=e end end
++ local terminal=analysis and (analysis.state=='complete' or analysis.state=='partial' or analysis.state=='failed' or analysis.state=='cancelled')
++ local cancel=env.event.node=='analysis' and env.event.state=='cancelled'
++ if terminal and not (cancel and analysis.state~='cancelled') then return 0 end
++ if env.event.node=='queue' and env.event.state=='pending' and (queue or analysis) then return 0 end
++ if env.event.node=='analysis' and env.event.state=='running' and analysis and type(analysis.progress)=='number' and type(env.event.progress)=='number' then env.event.progress=math.max(env.event.progress,analysis.progress) end
++ env.revision=prev.revision+1; env.event.id='server-'..env.revision
++elseif env.revision <= prev.revision then return 0 end
++local snap={kind='snapshot',publisher=env.publisher,stream=env.stream,revision=env.revision,at=env.at,connected=env.kind~='disconnected',events=prev.events,states=prev.states,session=prev.session}
++snap.related_publisher=env.related_publisher or prev.related_publisher
++snap.client_dropped=env.client_dropped or prev.client_dropped or 0
++if env.kind=='snapshot' then snap.events=env.events; snap.states=env.states; snap.session=env.session end
++if env.kind=='event' then
++ local es={}; for _,e in ipairs(snap.events) do if e.id~=env.event.id then table.insert(es,e) end end
++ table.insert(es,env.event); while #es>100 do table.remove(es,1) end; snap.events=es
++ local st={}; for _,e in ipairs(snap.states) do if e.node~=env.event.node then table.insert(st,e) end end
++ table.insert(st,env.event); snap.states=st
++ if env.event.sessionMode then snap.session={mode=env.event.sessionMode} end
++ if env.event.node=='analysis' and (env.event.state=='complete' or env.event.state=='partial' or env.event.state=='failed' or env.event.state=='cancelled') then
++  local internal={queue=true,parse_resume=true,parse_job=true,indexing=true,domain_a=true,domain_b=true,domain_c=true,domain_d=true,validation=true,scoring=true,database=true,guest_store=true}
++  local clean={}; for _,e in ipairs(snap.states) do if not internal[e.node] or (e.state~='pending' and e.state~='running') then table.insert(clean,e) end end; snap.states=clean
++ end
++end
++redis.call('HSET',KEYS[2],env.publisher,cjson.encode(snap)); redis.call('ZADD',KEYS[3],env.at,env.publisher)
++local stale=redis.call('ZRANGEBYSCORE',KEYS[3],'-inf',ARGV[3]); for _,k in ipairs(stale) do redis.call('HDEL',KEYS[2],k); redis.call('ZREM',KEYS[3],k) end
++local over=redis.call('ZCARD',KEYS[3])-tonumber(ARGV[4]); if over>0 then local ks=redis.call('ZRANGE',KEYS[3],0,over-1); for _,k in ipairs(ks) do redis.call('HDEL',KEYS[2],k); redis.call('ZREM',KEYS[3],k) end end
++redis.call('XADD',KEYS[1],'MAXLEN',ARGV[5],'*','envelope',cjson.encode(env)); redis.call('XTRIM',KEYS[1],'MINID',ARGV[3]..'-0')
++for _,key in ipairs(KEYS) do redis.call('EXPIRE',key,ARGV[6]) end
++return 1
++'''
++SOURCES_LUA = r'''
++local latest=redis.call('XREVRANGE',KEYS[1],'+','-','COUNT',1)
++local ids=redis.call('ZRANGEBYSCORE',KEYS[3],ARGV[3],'+inf'); table.sort(ids); local rows={}
++for i=tonumber(ARGV[1])+1,math.min(#ids,tonumber(ARGV[1])+tonumber(ARGV[2])) do local value=redis.call('HGET',KEYS[2],ids[i]); if value then table.insert(rows,value) end end
++return cjson.encode({rows=rows,total=redis.call('ZCOUNT',KEYS[3],ARGV[3],'+inf'),cursor=(#latest>0 and latest[1][1] or '0-0')})
++'''
++READ_LUA = r'''
++local cursor=ARGV[1]; local limit=tonumber(ARGV[2]); local cutoff=ARGV[3]
++local first=redis.call('XRANGE',KEYS[1],cutoff,'+','COUNT',1)
++local last=redis.call('XREVRANGE',KEYS[1],'+','-','COUNT',1)
++local function before(a,b)
++ local am,as=string.match(a,'^(%d+)%-(%d+)$'); local bm,bs=string.match(b,'^(%d+)%-(%d+)$')
++ if tonumber(am)==tonumber(bm) then return tonumber(as)<tonumber(bs) end
++ return tonumber(am)<tonumber(bm)
++end
++local gap=cursor~='' and cursor~='0-0' and (#first==0 or before(cursor,first[1][1]) or before(last[1][1],cursor))
++local minimum=cutoff; if cursor~='' and not gap then minimum='('..cursor end
++local found=redis.call('XRANGE',KEYS[1],minimum,'+','COUNT',limit+1); local rows={}
++for i=1,math.min(#found,limit) do table.insert(rows,{id=found[i][1],envelope=found[i][2][2]}) end
++local nextcursor=(#rows>0 and rows[#rows].id or (#last>0 and last[1][1] or '0-0'))
++return cjson.encode({rows=rows,cursor=nextcursor,gap=gap,has_more=#found>limit})
++'''
++
++
++class RedisFlowStore:
++    scope = 'shared'
++
++    def __init__(self, url):
++        import redis
++        from redis.backoff import NoBackoff
++        from redis.retry import Retry
++        self.redis = redis.Redis.from_url(url, decode_responses=True, socket_timeout=1, socket_connect_timeout=1,
++                                         retry_on_timeout=False, retry=Retry(NoBackoff(), 0))
++        self.keys = [PREFIX + item for item in ('events', 'sources', 'active')]
++
++    def rate(self, key, limit):
++        name = PREFIX + 'rate:' + hashlib.sha256(key.encode()).hexdigest() + ':' + str(int(time.time() // 60))
++        script = "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],120) end; return n"
++        if self.redis.eval(script, 1, name) > limit:
++            raise FlowRateLimited()
++
++    def append(self, envelope, *, server=False):
++        cutoff = int(time.time() * 1000) - RETENTION_SECONDS * 1000
++        return bool(self.redis.eval(APPEND_LUA, len(self.keys), *self.keys, json.dumps(envelope), int(server), cutoff, MAX_SOURCES, MAX_EVENTS, RETENTION_SECONDS))
++
++    def read(self, cursor=None, limit=200):
++        if cursor:
++            cursor_key(cursor)
++        cutoff = str(int(time.time() * 1000) - RETENTION_SECONDS * 1000) + '-0'
++        value = json.loads(self.redis.eval(READ_LUA, 1, self.keys[0], cursor or '', limit, cutoff))
++        return {'events': [{'id': row['id'], 'envelope': decode_envelope(row['envelope'])} for row in value['rows']] if value['rows'] else [],
++                'cursor': value['cursor'], 'has_more': value['has_more'], 'gap': value['gap'], 'scope': self.scope, 'available': True}
++
++    def snapshots(self, offset=0, limit=100):
++        value = json.loads(self.redis.eval(SOURCES_LUA, len(self.keys), *self.keys, offset, limit, int(time.time() * 1000) - RETENTION_SECONDS * 1000))
++        rows = [decode_envelope(row) for row in value['rows']] if value['rows'] else []
++        return {'sources': rows, 'total': value['total'], 'has_more': value['total'] > offset + limit,
++                'cursor': value['cursor'], 'scope': self.scope, 'available': True}
++
++    def status(self):
++        self.redis.ping()
++        count = self.redis.zcount(PREFIX + 'workers', time.time() - 30, '+inf')
++        return {'available': True, 'scope': self.scope, 'retention_seconds': RETENTION_SECONDS, 'max_events': MAX_EVENTS, 'max_sources': MAX_SOURCES,
++                'worker': {'known': True, 'available': count > 0, 'count': count, 'max_age_seconds': 30}}
++
++    def worker_heartbeat(self, worker):
++        key = PREFIX + 'workers'
++        with self.redis.pipeline(transaction=True) as pipe:
++            pipe.zadd(key, {identifier(worker): time.time()})
++            pipe.zremrangebyscore(key, '-inf', time.time() - 30)
++            pipe.expire(key, 60)
++            pipe.execute()
++
++    def link(self, source, publisher):
++        script = """redis.call('HSET',KEYS[1],ARGV[1],ARGV[2]); redis.call('ZADD',KEYS[2],ARGV[3],ARGV[1]);
++        local old=redis.call('ZRANGEBYSCORE',KEYS[2],'-inf',ARGV[4]); for _,k in ipairs(old) do redis.call('HDEL',KEYS[1],k); redis.call('ZREM',KEYS[2],k) end;
++        local n=redis.call('ZCARD',KEYS[2])-tonumber(ARGV[5]); if n>0 then local keys=redis.call('ZRANGE',KEYS[2],0,n-1); for _,k in ipairs(keys) do redis.call('HDEL',KEYS[1],k); redis.call('ZREM',KEYS[2],k) end end;
++        redis.call('EXPIRE',KEYS[1],ARGV[6]); redis.call('EXPIRE',KEYS[2],ARGV[6]); return 1"""
++        self.redis.eval(script, 2, PREFIX + 'links', PREFIX + 'link-times', source, publisher, int(time.time()), int(time.time()) - RETENTION_SECONDS, MAX_SOURCES, RETENTION_SECONDS)
++
++    def related(self, source):
++        return self.redis.hget(PREFIX + 'links', source)
++
++
++def decode_envelope(value):
++    row = json.loads(value)
++    # Redis Lua encodes empty tables as objects; wire lists remain arrays.
++    if row.get('kind') == 'snapshot':
++        for field in ('events', 'states'):
++            if not row.get(field):
++                row[field] = []
++    return row
++
++
++class UnavailableFlowStore:
++    scope = 'unavailable'
++
++    def __getattr__(self, name):
++        def unavailable(*args, **kwargs):
++            raise FlowUnavailable()
++        return unavailable
++
++
++@lru_cache(maxsize=4)
++def _store(url, production):
++    if url:
++        try:
++            return RedisFlowStore(url)
++        except Exception:
++            return UnavailableFlowStore()
++    return UnavailableFlowStore() if production else MemoryFlowStore()
++
++
++def flow_store(config=None):
++    if config is None:
++        from app.core.config import settings
++        config = settings()
++    value = getattr(config, 'careerlens_flow_redis_url', '')
++    url = value.get_secret_value() if hasattr(value, 'get_secret_value') else str(value or '')
++    return _store(url, getattr(config, 'app_env', 'development').lower() not in ('development', 'test', 'local'))
++
++
++def emit_server_event(run_id, node, state, *, progress=None, execution='member', criterion=None, store=None):
++    """Best effort observation never fails a real analysis or exposes its contents."""
++    target = None
++    try:
++        stream = identifier(run_id)
++        at = int(time.time() * 1000)
++        event = clean_event({'id': 'server-1', 'node': node, 'state': state, 'kind': 'progress', 'at': at,
++                            'progress': progress, 'execution': execution, 'criterion': criterion,
++                            'sessionMode': 'guest' if execution == 'guest' else 'member'}, server=True)
++        if event is None:
++            return False
++        target = store or flow_store()
++        if target.__dict__.get('_emit_retry_after', 0) > time.monotonic():
++            return False
++        envelope = {'kind': 'event', 'publisher': ('guest:' if execution == 'guest' else 'worker:') + stream,
++                    'stream': stream, 'revision': 1, 'at': at, 'active': False, 'event': event}
++        related = target.related(envelope['publisher'])
++        if related:
++            envelope['related_publisher'] = related
++        return target.append(envelope, server=True)
++    except Exception:
++        if target is not None:
++            target._emit_retry_after = time.monotonic() + 10
++        return False
++
++
++def link_run_source(run_id, publisher, *, execution='member', store=None):
++    """Anonymous request correlation only; never an authorization/ownership grant."""
++    try:
++        source = ('guest:' if execution == 'guest' else 'worker:') + identifier(run_id)
++        browser = 'browser:' + identifier(publisher)
++        (store or flow_store()).link(source, browser)
++        return True
++    except Exception:
++        return False
++
++
++async def observe_progress(db, run_id, stage, message, percent, status):
++    target = getattr(db, 'flow_store', None)
++    if target is None:
++        return
++    node = {'queued': 'queue', 'parsing': 'analysis', 'indexing': 'indexing', 'evaluation': 'analysis',
++            'criterion': 'analysis', 'validation': 'validation', 'completed': 'analysis', 'cancelled': 'analysis'}.get(stage)
++    if node is None:
++        return
++    state = {'completed': 'complete', 'cancelled': 'cancelled', 'failed': 'failed'}.get(status, 'running')
++    criterion = None
++    if stage == 'criterion' and isinstance(message, str) and re.match(r'^[A-D][1-3] · ', message):
++        criterion = message[:2]
++        node = 'domain_' + criterion[0].lower()
++    fixed = {
++        '이력서 문서 구조화 시작': ('parse_resume', 'running'), '이력서 문서 구조화 완료': ('parse_resume', 'complete'),
++        '채용공고 구조화 완료': ('parse_job', 'complete'), '이력서 근거 검색 준비 완료': ('indexing', 'complete'),
++        '최종 점수 계산 시작': ('scoring', 'running'), '최종 점수 계산 완료': ('scoring', 'complete'),
++        '점수 계산 및 Markdown 보고서 생성 시작': ('database', 'running'), '최종 Markdown 보고서 저장 완료': ('database', 'complete'),
++    }
++    if isinstance(message, str) and message in fixed:
++        node, state = fixed[message]
++    await asyncio.to_thread(emit_server_event, run_id, node, state, progress=percent, criterion=criterion, store=target)
++    if node != 'analysis' and stage not in ('completed', 'cancelled'):
++        await asyncio.to_thread(emit_server_event, run_id, 'analysis', 'running', progress=percent, store=target)
+diff --git a/app/core/telemetry.py b/app/core/telemetry.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2a4c8877edbfab624cbc937aafa6240c8dbb92aa
+--- /dev/null
++++ b/app/core/telemetry.py
+@@ -0,0 +1,46 @@
++import asyncio
++import inspect
++import logging
++from datetime import datetime, timezone
++from time import perf_counter
++
++
++logger = logging.getLogger(__name__)
++
++
++async def observe_tool(name, operation, audit=None, *, criterion_code=None, model=None):
++    """Observe a real tool operation without retaining its input or result contents."""
++    started_at = datetime.now(timezone.utc).isoformat()
++    started = perf_counter()
++    status, result_count, error_type = 'completed', None, None
++    try:
++        result = operation()
++        if inspect.isawaitable(result):
++            result = await result
++        if isinstance(result, (list, tuple)):
++            result_count = len(result)
++        return result
++    except asyncio.CancelledError:
++        status = 'cancelled'
++        raise
++    except Exception as exc:
++        status, error_type = 'failed', type(exc).__name__
++        raise
++    finally:
++        if audit:
++            record = {
++                'name': name, 'criterion_code': criterion_code, 'status': status,
++                'started_at': started_at,
++                'duration_ms': round((perf_counter() - started) * 1000),
++                'result_count': result_count,
++            }
++            if model:
++                record['model'] = model
++            if error_type:
++                record['error_type'] = error_type
++            try:
++                await audit(record)
++            except Exception:
++                # Optional observability must not change the operation's result or error.
++                # Do not log exception messages: upstream errors may contain private data.
++                logger.warning('Optional tool telemetry could not be stored')
+diff --git a/docs/architecture/shared-flow.md b/docs/architecture/shared-flow.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..96aec9d07a5fcdcb1385c5c8df7ea824616c0c39
+--- /dev/null
++++ b/docs/architecture/shared-flow.md
+@@ -0,0 +1,79 @@
++# Shared operation flow
++
++Dashboard summary/detail and `/api/v1/flow/{events,sources,status}` reads require a
++valid member access token. No administrator list is consulted. Responses contain
++allowlisted operational metadata, never account IDs, email, documents, report text,
++request URLs, model prompts, credentials or raw errors. Existing personal-resource
++ownership checks are unchanged.
++
++Set `APP_ENV=production` and `CAREERLENS_FLOW_REDIS_URL` to the same private Redis
++instance in **all API, evaluation worker and frontend guest-engine processes**.
++Install `requirements.lock.txt` (includes Redis 6.4). Redis URLs are server-only
++secrets. Do not put them in frontend JS. Production without shared Redis fails
++flow reads/writes with a controlled 503; it never falls back to isolated memory.
++Development without Redis explicitly reports `scope: process`, which cannot
++aggregate other processes. Use Redis locally to exercise the deployment topology.
++
++This adds no Supabase table/migration. Existing application migrations and
++checkpoints must already be provisioned for normal evaluations. Redis should be
++private, authenticated/TLS as appropriate, persistent and monitored. AOF preserves
++retained flow metadata across Redis restarts; losing/evicting the Redis database
++causes an explicit cursor gap and observer snapshot reload, not reconstructed data.
++
++## Transport
++
++- `POST /api/v1/flow/events`: `{publisher: UUID, stream: UUID, client_dropped?: int,
++  batch: [envelope]}`. Up to 25 envelopes / 128 KiB. Guest publishing is permitted,
++  while reading is member-only. Client observations are always `source: observed`;
++  client attempts to claim server authority or supply extra fields are discarded.
++  Response: `{accepted, source_id, scope, available}`. Duplicate/older revisions
++  are not stored twice. Request budgets: 240 batches/minute/source and a coarse
++  120,000/minute/address limit, accommodating shared proxies/NAT. Deploy ingress
++  request/connection limits as well; random source IDs are not authentication.
++- Envelope kinds: `event`, `snapshot`, `active`, `disconnected`. Event node, kind,
++  state, method and criterion are fixed allowlists. Numeric progress, duration and
++  timestamp are bounded. No arbitrary label/message field is accepted.
++- `GET /sources?limit=100&offset=0`: `{sources,total,has_more,cursor,scope,available}`.
++  Each source snapshot and its high-water cursor are read atomically. Observe from
++  the first page cursor while loading subsequent pages to catch intervening events.
++- `GET /events?cursor=<redis-id>&limit=200`: `{events:[{id,envelope}],cursor,
++  has_more,gap,scope,available}`. Drain `has_more`, then poll about once per second.
++  On gap, reload snapshots; do not replay old records as new animation.
++- `GET /status`: scope/availability/retention limits plus worker heartbeat status.
++  Worker heartbeats every 5 seconds expire from health after 30 seconds. In shared
++  mode a new member evaluation is rejected before enqueueing when no live worker
++  is observed **or Redis health cannot be read**. This explicit admission
++  dependency avoids accepting work into an unverified queue. Recovery of an
++  already accepted idempotent request still returns its existing run. Worker
++  presence is not a guarantee of DB/model connectivity.
++
++API, worker and guest engine may use `emit_server_event(run_id,node,state,...)`.
++This helper accepts only fixed metadata and cannot interrupt real analysis on an
++observation failure. The source namespace (`worker:UUID` / `guest:UUID`) is assigned
++by the server; browser clients cannot publish into it. `link_run_source` links a
++run to the random browser publisher from `X-CareerLens-Flow-Publisher`, providing
++anonymous correlation only, never granting report ownership/access. A forged
++browser observation/correlation is untrusted and must not be used as an audit log
++or proof of a real server action.
++
++## Bounds and verification
++
++Retention is at most 24 hours, 50,000 global events, 5,000 source snapshots, and
++100 recent events per source. Source states remain separate. Limits intentionally
++prevent unbounded memory; this is recent live observation, not durable accounting
++of every request forever. Client queue loss is carried in `client_dropped`, and
++cursor gaps disclose records no longer retained. Analysis scoring/DB values are
++not derived from these records.
++
++Server emission is best-effort, not a durable outbox. A Redis outage can lose
++worker/guest events, including terminal events, and reconnecting does not
++guarantee recovery of those missing events from the report database. Existing
++analyses continue; the flow view must disclose connection/retention limitations
++and must not claim that every request during an outage was recorded.
++
++`tests/test_flow.py` covers parallel 32-source publishing, event isolation,
++duplicate suppression, reconnect/cursor gaps, Redis Lua atomic worker updates,
++member-only reads, sanitized guest publishing, bounded retention, worker health
++and transient DB-claim recovery. Redis protocol tests use optional
++`fakeredis[lua]` and are synthetic; they are not deployed load/capacity results.
++Install `requirements-dev.txt` in the test environment to run that coverage.
+diff --git a/requirements-dev.txt b/requirements-dev.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..446811f8872d4ca7a14923f65d35fb5e18a68cf1
+--- /dev/null
++++ b/requirements-dev.txt
+@@ -0,0 +1,3 @@
++-r requirements.lock.txt
++# Executes the Redis protocol/Lua concurrency tests without a live Redis server.
++fakeredis[lua]==2.39.0
+diff --git a/tests/test_dashboard.py b/tests/test_dashboard.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..beb79b365220c7cfd8f5186ba3d33acaf619ab0d
+--- /dev/null
++++ b/tests/test_dashboard.py
+@@ -0,0 +1,239 @@
++import copy
++import json
++from types import SimpleNamespace
++from uuid import uuid4
++
++import pytest
++from pydantic import SecretStr
++
++import app.application.dashboard as dashboard
++
++
++PRIVATE = 'PRIVATE_RESUME_REPORT_EVIDENCE_AND_UPSTREAM_SECRET'
++TIME = '2026-10-12T00:00:00Z'
++
++
++class FakeDB:
++    def __init__(self, rows):
++        self.rows = rows
++        self.calls = []
++
++    async def select(self, table, **params):
++        self.calls.append((table, params))
++        assert 1 <= params['limit'] <= 501
++        assert params.get('select') and params['select'] != '*'
++        if table == 'evaluation_runs':
++            assert params['id'].startswith('eq.')
++        elif table == 'analysis_reports':
++            assert params['match_result_id'].startswith('eq.')
++        else:
++            assert params['run_id'].startswith('eq.')
++        result = self.rows.get(table, [])
++        if isinstance(result, Exception):
++            raise result
++        return copy.deepcopy(result)
++
++
++def fixture():
++    run, resume, job, match, criterion = (str(uuid4()) for _ in range(5))
++    return run, {
++        'evaluation_runs': [{'id': run, 'user_id': str(uuid4()), 'status': 'partial',
++            'created_at': TIME, 'resume_id': resume, 'job_posting_id': job,
++            'input_fingerprint': 'a' * 64, 'model_name': 'gpt-test',
++            'prompt_version': 'prompt-v7', 'graph_thread_id': str(uuid4()),
++            'failure_reason': PRIVATE}],
++        'evaluation_input_snapshots': [{'id': str(uuid4()), 'input_format': 'markdown',
++            'resume_hash': 'b' * 64, 'job_hash': 'c' * 64, 'snapshot_hash': 'a' * 64,
++            'resume_snapshot': {'original_text': PRIVATE}, 'job_snapshot': {'description': PRIVATE}}],
++        'match_results': [{'id': match, **{key: 0 for key in dashboard.DOMAINS},
++            'overall_score': 0, 'eligibility_status': 'not_met', 'validation_status': 'passed'}],
++        'criterion_results': [{'id': str(uuid4()), 'criterion_id': criterion, 'score': 0,
++            'verdict': 'not_met', 'confidence': 0, 'validation_status': 'passed', 'attempt_count': 1,
++            'evidence': [{'quote': PRIVATE}], 'reasoning_summary': PRIVATE,
++            'evaluation_criteria': {'criterion_code': 'A1', 'name_ko': PRIVATE}}],
++        'node_executions': [{'id': str(uuid4()), 'node_name': 'evaluate_A1',
++            'criterion_id': criterion, 'attempt_number': 1, 'duration_ms': 0,
++            'status': 'completed', 'error_summary': PRIVATE}],
++        'analysis_reports': [{'id': str(uuid4()), 'status': 'completed', 'created_at': TIME,
++            'completed_at': TIME, 'report_text': PRIVATE, 'report_data': {'private': PRIVATE}}],
++        'evaluation_stage_timings': [{'id': 1, 'stage': 'parse_resume', 'criterion_code': None,
++            'attempt_number': 1, 'duration_ms': 0, 'status': 'completed', 'details': {'private': PRIVATE}}],
++        'validation_issues': [],
++    }
++
++
++@pytest.mark.asyncio
++async def test_public_detail_uses_actual_zero_and_never_leaks_private_fields():
++    run, rows = fixture()
++    db = FakeDB(rows)
++    detail = await dashboard.build_run_detail(db, run)
++    payload = json.dumps(detail)
++    assert PRIVATE not in payload
++    assert 'user_id' not in payload and 'original_text' not in payload and 'report_text' not in payload
++    assert detail['scores']['overall_score'] == 0
++    assert detail['scores']['criteria'][0]['evidence_count'] == 1
++    assert detail['stages'][0]['duration_ms'] == 0
++    assert detail['stages'][0]['attempt_number'] == 1
++    assert detail['stages'][0]['criterion_applicability'] == 'not_applicable'
++    assert detail['input']['type'] == 'markdown'
++    assert detail['input']['sha256'] == 'a' * 64
++    assert detail['persistence']['stored'] is True
++    assert detail['persistence']['has_body'] is True
++    assert detail['persistence']['result_schema_compatible'] is True
++    assert detail['persistence']['retrievable'] is None
++    assert detail['validation']['unresolved_issue_count'] == 0
++    assert detail['availability']['validation']['status'] == 'available'
++    assert detail['llm']['call_count'] is None
++    assert detail['tools'] is None and detail['memory']['retrieved_count'] is None
++    assert len(db.calls) == 10
++
++
++@pytest.mark.asyncio
++async def test_missing_metadata_is_not_filled_with_current_config_or_prompt_version():
++    run, rows = fixture()
++    rows['evaluation_input_snapshots'] = []
++    rows['intermediate_artifacts'] = [{'id': str(uuid4()), 'artifact_type': 'criterion_result'}]
++    rows['evaluation_runs'][0].pop('model_name')
++    detail = await dashboard.build_run_detail(FakeDB(rows), run, SimpleNamespace(openai_model='current-new-model'))
++    assert detail['reproduction']['model'] is None
++    assert detail['reproduction']['prompt_version'] == 'prompt-v7'
++    assert detail['reproduction']['schema_version'] is None
++    assert detail['reproduction']['schema_versions'] == []
++    assert detail['input']['type'] is None
++    assert detail['availability']['input_type']['status'] == 'not_recorded'
++    assert detail['llm']['input_tokens'] is None
++    assert detail['llm']['cost'] is None
++
++
++@pytest.mark.asyncio
++async def test_legacy_scores_remain_null_and_reports_are_stored_but_incompatible():
++    run, rows = fixture()
++    rows['criterion_results'][0].update(score=None, verdict='unknown')
++    rows['match_results'][0].update(qualifications=None, eligibility_status='unknown')
++    detail = await dashboard.build_run_detail(FakeDB(rows), run)
++    assert detail['scores']['qualifications'] is None
++    assert detail['scores']['criteria'][0]['score'] is None
++    assert detail['scores']['criteria'][0]['verdict'] == 'unknown'
++    assert detail['persistence']['stored'] is True
++    assert detail['persistence']['result_schema_compatible'] is False
++    assert detail['persistence']['incompatibility_count'] == 3
++
++
++@pytest.mark.asyncio
++async def test_call_hashes_schemas_and_partial_token_usage_are_distinct():
++    run, rows = fixture()
++    rows['intermediate_artifacts'] = [
++        {'id': str(uuid4()), 'artifact_type': 'llm_call', 'schema_version': 'artifact-v2',
++         'content': {'context': {'phase': 'draft', 'criterion_code': 'A1'},
++                     'schema': 'CriterionResult', 'model': 'gpt-test', 'request_hash': 'd' * 64,
++                     'schema_hash': 'e' * 64, 'prompt_hash': 'f' * 64, 'success': True,
++                     'usage': {'input_tokens': 0, 'output_tokens': 12}, 'response_text': PRIVATE}},
++        {'id': str(uuid4()), 'artifact_type': 'llm_call', 'schema_version': 'artifact-v2',
++         'content': {'context': {'phase': 'validation_repair'}, 'schema': 'CriterionResult',
++                     'model': 'gpt-test', 'request_hash': '1' * 64, 'success': False,
++                     'error_type': PRIVATE}},
++    ]
++    detail = await dashboard.build_run_detail(FakeDB(rows), run)
++    assert PRIVATE not in json.dumps(detail)
++    assert detail['llm']['call_count'] == 2
++    assert detail['llm']['input_tokens'] is None and detail['llm']['output_tokens'] is None
++    assert detail['llm']['calls'][0]['input_tokens'] == 0
++    assert detail['llm']['calls'][0]['schema_sha256'] == 'e' * 64
++    assert detail['reproduction']['schema_version'] == 'artifact-v2'
++    assert detail['reproduction']['request_sha256'] is None
++    assert len(detail['reproduction']['request_hashes']) == 2
++
++
++@pytest.mark.asyncio
++async def test_tool_and_checkpoint_counts_require_actual_records(monkeypatch):
++    run, rows = fixture()
++    checkpoint_id = str(uuid4())
++    def read_metadata(connection, thread):
++        assert connection == PRIVATE
++        assert thread == rows['evaluation_runs'][0]['graph_thread_id']
++        return {'status': 'available', 'count': 3, 'latest_id': checkpoint_id, 'latest_at': TIME}
++    monkeypatch.setattr(dashboard, '_checkpoint_metadata', read_metadata)
++    rows['intermediate_artifacts'] = [{'id': str(uuid4()), 'artifact_type': 'tool_call',
++        'schema_version': 'tool-call-v1', 'content': {'name': 'vector_search', 'status': 'completed',
++            'result_count': 0, 'criterion_code': 'A1', 'duration_ms': 8, 'payload': PRIVATE}}]
++    detail = await dashboard.build_run_detail(FakeDB(rows), run, SimpleNamespace(supabase_db_url=SecretStr(PRIVATE)))
++    assert detail['tools'][0]['name'] == 'vector_search'
++    assert detail['tools'][0]['result_count'] == 0
++    assert detail['memory']['retrieved_count'] == 0
++    assert detail['memory']['checkpoint_count'] == 3
++    assert detail['memory']['checkpoint_id'] == checkpoint_id
++    assert PRIVATE not in json.dumps(detail)
++
++
++@pytest.mark.asyncio
++async def test_metadata_failure_is_sanitized_and_does_not_erase_other_sections(monkeypatch):
++    run, rows = fixture()
++    rows['validation_issues'] = RuntimeError(PRIVATE)
++    def fail(*args):
++        raise RuntimeError(PRIVATE)
++    monkeypatch.setattr(dashboard, '_checkpoint_metadata', fail)
++    detail = await dashboard.build_run_detail(FakeDB(rows), run, SimpleNamespace(supabase_db_url=SecretStr(PRIVATE)))
++    assert detail['availability']['validation']['status'] == 'unavailable'
++    assert detail['validation']['unresolved_issue_count'] is None
++    assert detail['memory']['checkpoints']['status'] == 'unavailable'
++    assert detail['scores']['overall_score'] == 0
++    assert PRIVATE not in json.dumps(detail)
++
++
++@pytest.mark.asyncio
++async def test_capped_history_does_not_claim_complete_call_totals():
++    run, rows = fixture()
++    rows['intermediate_artifacts'] = [{'id': str(uuid4()), 'artifact_type': 'llm_call',
++        'content': {'usage': {'input_tokens': 1, 'output_tokens': 1}}} for _ in range(501)]
++    detail = await dashboard.build_run_detail(FakeDB(rows), run)
++    assert len(detail['llm']['calls']) == 500
++    assert detail['llm']['call_count'] is None
++    assert detail['llm']['input_tokens'] is None
++    assert detail['availability']['llm']['status'] == 'partial'
++
++
++@pytest.mark.asyncio
++async def test_unknown_run_returns_none_without_querying_private_related_tables():
++    db = FakeDB({})
++    assert await dashboard.build_run_detail(db, uuid4()) is None
++    assert len(db.calls) == 1
++
++
++@pytest.mark.asyncio
++async def test_actual_global_issues_and_criterion_rechecks_are_separately_scoped():
++    run, rows = fixture()
++    rows['criterion_results'][0]['attempt_count'] = 2
++    rows['criterion_results'][0]['validation_status'] = 'needs_review'
++    rows['validation_issues'] = [{'id': str(uuid4()), 'issue_type': 'cross_domain_conflict',
++        'resolution_status': 'open', 'severity': 'medium', 'description': PRIVATE}]
++    detail = await dashboard.build_run_detail(FakeDB(rows), run)
++    assert detail['validation']['retry_count'] == 1
++    assert detail['validation']['retry_scope'] == 'criterion_re-evaluation'
++    assert detail['validation']['unresolved_issue_count'] == 1
++    assert detail['validation']['criterion_status_counts']['needs_review'] == 1
++    assert detail['validation']['revalidation_status'] == 'issues_remaining'
++    assert PRIVATE not in json.dumps(detail)
++
++
++@pytest.mark.asyncio
++async def test_history_queries_request_chronology_and_missing_node_time_is_not_inferred():
++    run, rows = fixture()
++    rows['node_executions'][0]['duration_ms'] = None
++    later = copy.deepcopy(rows['criterion_results'][0])
++    later.update(id=str(uuid4()), criterion_id=str(uuid4()))
++    later['evaluation_criteria']['criterion_code'] = 'B3'
++    rows['criterion_results'].insert(0, later)
++    rows['intermediate_artifacts'] = [{'id': str(uuid4()), 'artifact_type': 'llm_call',
++        'created_at': TIME, 'content': {'schema': 'CriterionResult'}}]
++    db = FakeDB(rows)
++    detail = await dashboard.build_run_detail(db, run)
++    calls = {table: params for table, params in db.calls}
++    assert calls['evaluation_stage_timings']['order'] == 'started_at.asc,id.asc'
++    assert calls['node_executions']['order'] == 'completed_at.asc,id.asc'
++    assert calls['intermediate_artifacts']['order'] == 'created_at.asc,id.asc'
++    assert calls['evaluation_events']['order'] == 'id.asc'
++    assert calls['validation_issues']['order'] == 'created_at.asc,id.asc'
++    assert [row['criterion_code'] for row in detail['scores']['criteria']] == ['A1', 'B3']
++    assert detail['llm']['calls'][0]['created_at'] == '2026-10-12T00:00:00+00:00'
++    assert detail['nodes'][0]['duration_ms'] is None
++    assert '별도 실행 시간은 미측정' in detail['availability']['nodes']['reason']
+diff --git a/tests/test_flow.py b/tests/test_flow.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a274576857c8adfdd5815bddc068d86dc132c00
+--- /dev/null
++++ b/tests/test_flow.py
+@@ -0,0 +1,389 @@
++import asyncio
++import json
++import time
++from concurrent.futures import ThreadPoolExecutor
++from types import SimpleNamespace
++from uuid import uuid4
++
++import pytest
++from fastapi.testclient import TestClient
++
++from app.main import app
++from app.api.v1.routes.api import user
++from app.application.flow import (MemoryFlowStore, RedisFlowStore, FlowUnavailable, FlowRateLimited,
++                                  clean_batch, emit_server_event, flow_store, observe_progress, link_run_source, PREFIX)
++
++
++def envelope(publisher=None, revision=1, node='auth', state='complete'):
++    ident = publisher or str(uuid4())
++    return {'kind': 'event', 'publisher': 'browser:' + ident, 'stream': ident, 'revision': revision,
++            'at': int(time.time() * 1000), 'active': True,
++            'event': {'id': f'event-{revision}', 'node': node, 'kind': 'session', 'state': state,
++                      'source': 'observed', 'sessionMode': 'member', 'at': int(time.time() * 1000)}}
++
++
++@pytest.fixture(params=['memory', 'redis'])
++def store(request):
++    if request.param == 'memory':
++        return MemoryFlowStore()
++    fakeredis = pytest.importorskip('fakeredis')
++    pytest.importorskip('lupa')
++    value = RedisFlowStore('redis://localhost:6379')
++    value.redis = fakeredis.FakeRedis(decode_responses=True)
++    return value
++
++
++def test_multiple_users_publish_without_overwriting_and_reconnect(store):
++    publishers = [str(uuid4()) for _ in range(32)]
++    def publish(ident):
++        for revision in range(1, 21):
++            store.append(envelope(ident, revision))
++    with ThreadPoolExecutor(max_workers=8) as pool:
++        list(pool.map(publish, publishers))
++    sources = store.snapshots(limit=100)
++    assert sources['total'] == 32
++    assert all(row['revision'] == 20 and len(row['events']) == 20 for row in sources['sources'])
++    cursor = None
++    identifiers = []
++    while True:
++        page = store.read(cursor, 73)
++        identifiers += [row['id'] for row in page['events']]
++        cursor = page['cursor']
++        if not page['has_more']:
++            break
++    assert len(identifiers) == len(set(identifiers)) == 640
++    assert store.read(cursor)['events'] == []
++    store.append(envelope(publishers[0], 21))
++    assert len(store.read(cursor)['events']) == 1
++
++
++def test_dedup_snapshot_cursor_and_parallel_worker_nodes(store):
++    first = envelope()
++    assert store.append(first)
++    assert not store.append(first)
++    cursor = store.snapshots()['cursor']
++    assert store.read(cursor)['events'] == []
++    run = str(uuid4())
++    assert link_run_source(run, first['stream'], store=store)
++    with ThreadPoolExecutor(max_workers=4) as pool:
++        results = list(pool.map(lambda node: emit_server_event(run, node, 'running', progress=30, store=store),
++                                ['domain_a', 'domain_b', 'domain_c', 'domain_d']))
++    assert all(results)
++    source = next(row for row in store.snapshots()['sources'] if row['publisher'].startswith('worker:'))
++    assert source['revision'] == 4
++    assert source['related_publisher'] == first['publisher']
++    assert len(source['states']) == 4
++    emit_server_event(run, 'analysis', 'cancelled', store=store)
++    source = next(row for row in store.snapshots()['sources'] if row['publisher'].startswith('worker:'))
++    assert [row['node'] for row in source['states']] == ['analysis']
++    assert not emit_server_event(run, 'analysis', 'running', progress=95, store=store)
++    assert not emit_server_event(run, 'guest_store', 'complete', store=store)
++    source = next(row for row in store.snapshots()['sources'] if row['publisher'].startswith('worker:'))
++    assert source['states'][0]['state'] == 'cancelled'
++
++
++def test_cancelled_server_run_cannot_be_revived_by_late_completion(store):
++    run = str(uuid4())
++    assert emit_server_event(run, 'analysis', 'cancelled', execution='guest', store=store)
++    assert not emit_server_event(run, 'analysis', 'complete', progress=100, execution='guest', store=store)
++    assert not emit_server_event(run, 'analysis', 'failed', execution='guest', store=store)
++    assert not emit_server_event(run, 'analysis', 'cancelled', execution='guest', store=store)
++    assert len(store.read()['events']) == 1
++    assert store.snapshots()['sources'][0]['states'][0]['state'] == 'cancelled'
++
++
++def test_late_queue_admission_cannot_reset_a_claimed_worker_run(store):
++    run = str(uuid4())
++    assert emit_server_event(run, 'queue', 'complete', store=store)
++    assert emit_server_event(run, 'analysis', 'running', progress=5, store=store)
++    assert not emit_server_event(run, 'queue', 'pending', progress=0, store=store)
++    states = {row['node']: row for row in store.snapshots()['sources'][0]['states']}
++    assert states['queue']['state'] == 'complete'
++    emit_server_event(run, 'analysis', 'running', progress=40, store=store)
++    emit_server_event(run, 'analysis', 'running', progress=30, store=store)
++    states = {row['node']: row for row in store.snapshots()['sources'][0]['states']}
++    assert states['analysis']['progress'] == 40
++
++
++@pytest.mark.asyncio
++async def test_lost_worker_lease_does_not_cancel_run_reclaimed_by_another_worker(monkeypatch):
++    import workers.evaluation as worker
++    store = MemoryFlowStore()
++    run, other = str(uuid4()), str(uuid4())
++    class DB:
++        flow_store = store
++        async def select(self, table, **filters):
++            assert table == 'evaluation_runs'
++            return [{'status': 'running', 'worker_id': other}]
++    async def execute(*args):
++        await asyncio.Event().wait()
++    async def heartbeat(*args):
++        return 'lease_lost_or_cancelled'
++    monkeypatch.setattr(worker, 'execute', execute)
++    monkeypatch.setattr(worker, 'heartbeat', heartbeat)
++    await worker.process(DB(), None, SimpleNamespace(evaluation_timeout_seconds=5), {'id': run}, str(uuid4()), None)
++    assert not any(row['envelope']['event']['state'] == 'cancelled' for row in store.read()['events'])
++
++
++@pytest.mark.asyncio
++async def test_committed_completion_survives_progress_log_failure(monkeypatch):
++    import workers.evaluation as worker
++    store = MemoryFlowStore()
++    run = str(uuid4())
++    failed_updates = []
++    class DB:
++        flow_store = store
++        async def update(self, table, values, **filters):
++            if values['status'] == 'completed':
++                return [{'id': run}]
++            failed_updates.append(values)
++            return []
++        async def insert(self, *args):
++            raise ConnectionError('Synthetic progress log outage')
++    async def execute(*args):
++        return {'scores': {'validation_status': 'passed'}}
++    async def heartbeat(*args):
++        await asyncio.Event().wait()
++    monkeypatch.setattr(worker, 'execute', execute)
++    monkeypatch.setattr(worker, 'heartbeat', heartbeat)
++    await worker.process(DB(), None, SimpleNamespace(evaluation_timeout_seconds=5), {'id': run}, str(uuid4()), None)
++    analysis = next(row for row in store.snapshots()['sources'][0]['states'] if row['node'] == 'analysis')
++    assert analysis['state'] == 'complete'
++    assert failed_updates == []
++
++
++def test_client_payload_cannot_forge_server_or_expose_personal_fields():
++    ident = str(uuid4())
++    raw = envelope(ident)
++    raw['event'].update(source='backend', token='SECRET', text='RESUME', email='a@example.com', url='/private', user_id=ident)
++    raw.update(label='NAME', account='ACCOUNT', related_publisher='worker:' + ident)
++    result = clean_batch({'stream': ident, 'publisher': ident, 'batch': [raw], 'client_dropped': 7})
++    assert len(result) == 1
++    assert result[0]['event']['source'] == 'observed'
++    assert result[0]['client_dropped'] == 7
++    assert 'related_publisher' not in result[0]
++    serialized = json.dumps(result)
++    for secret in ('SECRET', 'RESUME', '@', '/private', 'user_id', 'NAME', 'ACCOUNT'):
++        assert secret not in serialized
++    assert clean_batch({'stream': ident, 'publisher': ident, 'batch': [{**raw, 'event': {**raw['event'], 'node': 'private'}}]}) == []
++    with pytest.raises(ValueError):
++        clean_batch({'stream': ident, 'publisher': 'worker:' + ident, 'batch': [raw]})
++    raw['event'].update(progress=10**400, durationMs=float('nan'), at=10**400)
++    safe = clean_batch({'stream': ident, 'publisher': ident, 'batch': [raw]})[0]['event']
++    assert safe['progress'] is None and safe['durationMs'] is None
++
++
++def test_demo_activity_is_not_relabelled_as_real_shared_observation():
++    ident = str(uuid4())
++    raw = envelope(ident)
++    raw['event']['source'] = 'demo'
++    assert clean_batch({'publisher': ident, 'stream': ident, 'batch': [raw]}) == []
++    raw['event']['source'] = 'observed'
++    raw['event']['sessionMode'] = 'demo'
++    assert clean_batch({'publisher': ident, 'stream': ident, 'batch': [raw]}) == []
++    assert clean_batch({'publisher': ident, 'stream': ident, 'batch': [{'kind': 'snapshot', 'revision': 1,
++        'session': {'mode': 'demo'}, 'events': [], 'states': []}]}) == []
++
++
++def test_empty_snapshots_keep_array_wire_contract_and_loss_count(store):
++    ident = str(uuid4())
++    batch = clean_batch({'publisher': ident, 'stream': ident, 'client_dropped': 4,
++                         'batch': [{'kind': 'snapshot', 'revision': 1, 'events': [], 'states': [], 'session': {'mode': 'guest'}}]})
++    store.append(batch[0])
++    snapshot = store.snapshots()['sources'][0]
++    event = store.read()['events'][0]['envelope']
++    assert snapshot['events'] == snapshot['states'] == event['events'] == event['states'] == []
++    assert snapshot['client_dropped'] == event['client_dropped'] == 4
++
++
++def test_source_bootstrap_paging_is_stable_when_other_users_become_active(store):
++    from uuid import UUID
++    ids = [str(UUID(int=value)) for value in range(1, 7)]
++    for ident in ids:
++        store.append(envelope(ident, 1, node='resume'))
++    first = store.snapshots(offset=0, limit=3)
++    # An old second-page source receives new activity during bootstrap.
++    store.append(envelope(ids[4], 2, node='posting'))
++    second = store.snapshots(offset=3, limit=3)
++    sources = first['sources'] + second['sources']
++    assert {row['publisher'] for row in sources} == {'browser:' + ident for ident in ids}
++    updated = next(row for row in sources if row['publisher'] == 'browser:' + ids[4])
++    assert {row['node'] for row in updated['states']} == {'resume', 'posting'}
++    assert len(store.read(first['cursor'])['events']) == 1
++
++
++def test_retention_sources_and_cursor_gap_are_explicit():
++    now = [time.time()]
++    store = MemoryFlowStore(maximum=3, source_limit=2, now=lambda: now[0])
++    store.append(envelope())
++    cursor = store.read()['cursor']
++    for _ in range(5):
++        store.append(envelope())
++    assert store.snapshots()['total'] == 2
++    assert len(store.read()['events']) == 3
++    assert store.read(cursor)['gap'] is True
++    now[0] += 86401
++    assert store.snapshots()['sources'] == []
++    assert store.read()['events'] == []
++
++
++def test_publish_limits_and_fail_closed_production(store):
++    store.rate('publisher', 1)
++    with pytest.raises(FlowRateLimited):
++        store.rate('publisher', 1)
++    unavailable = flow_store(SimpleNamespace(careerlens_flow_redis_url='', app_env='production'))
++    with pytest.raises(FlowUnavailable):
++        unavailable.read()
++    assert not emit_server_event(str(uuid4()), 'analysis', 'running', store=unavailable)
++    assert flow_store(SimpleNamespace(careerlens_flow_redis_url='', app_env='development')).scope == 'process'
++
++
++def test_redis_workers_shared_between_independent_instances():
++    fakeredis = pytest.importorskip('fakeredis')
++    fake = fakeredis.FakeServer()
++    api, worker = RedisFlowStore('redis://localhost'), RedisFlowStore('redis://localhost')
++    api.redis = fakeredis.FakeRedis(server=fake, decode_responses=True)
++    worker.redis = fakeredis.FakeRedis(server=fake, decode_responses=True)
++    assert api.status()['worker']['available'] is False
++    worker.worker_heartbeat(str(uuid4()))
++    assert api.status()['worker'] == {'known': True, 'available': True, 'count': 1, 'max_age_seconds': 30}
++    worker.redis.zadd(PREFIX + 'workers', {str(uuid4()): time.time() - 40})
++    assert api.status()['worker']['count'] == 1
++
++
++def test_guest_publish_member_only_reads_and_ordinary_member_access():
++    with TestClient(app) as client:
++        app.state.flow_store = MemoryFlowStore()
++        ident = str(uuid4())
++        body = {'publisher': ident, 'stream': ident, 'batch': [envelope(ident)]}
++        response = client.post('/api/v1/flow/events', json=body)
++        assert response.status_code == 202
++        assert response.json()['accepted'] == 1
++        for path in ('events', 'sources', 'status'):
++            assert client.get('/api/v1/flow/' + path).status_code == 401
++        app.dependency_overrides[user] = lambda: str(uuid4())
++        try:
++            for path in ('events', 'sources', 'status'):
++                response = client.get('/api/v1/flow/' + path)
++                assert response.status_code == 200
++                assert response.headers['cache-control'] == 'no-store'
++            assert client.get('/api/v1/flow/events?cursor=token').status_code == 422
++            assert client.get('/api/v1/flow/events?limit=1001').status_code == 422
++            assert client.post('/api/v1/flow/events', content='x' * 131073, headers={'Content-Type': 'application/json'}).status_code == 413
++            assert client.post('/api/v1/flow/events', json={'publisher': ident, 'stream': ident, 'batch': [{}] * 26}).status_code == 422
++        finally:
++            app.dependency_overrides.clear()
++
++
++def test_invalid_member_token_cannot_read_shared_metadata():
++    class ExpiredDB:
++        async def request(self, *args, **kwargs):
++            raise ValueError('private invalid token detail')
++        async def rpc(self, *args, **kwargs):
++            raise AssertionError('must not read dashboard before authentication')
++    with TestClient(app) as client:
++        original = app.state.db
++        app.state.db = ExpiredDB()
++        try:
++            for path in ('/admin/evaluation-performance', '/admin/evaluation-performance/' + str(uuid4()), '/flow/sources', '/flow/events', '/flow/status'):
++                response = client.get('/api/v1' + path, headers={'Authorization': 'Bearer invalid-token'})
++                assert response.status_code == 401
++                assert 'private' not in response.text
++        finally:
++            app.state.db = original
++
++
++def test_shared_mode_rejects_member_analysis_before_queue_when_worker_absent(monkeypatch):
++    import app.api.v1.routes.api as routes
++    async def ready_resume(*args):
++        return {'parse_status': 'ready', 'original_text': 'synthetic resume'}
++    async def ready_job(*args):
++        return {'description': 'synthetic job'}
++    async def rubric(*args):
++        return ({'id': str(uuid4())}, {})
++    monkeypatch.setattr(routes, 'owned', ready_resume)
++    monkeypatch.setattr(routes, 'job', ready_job)
++    monkeypatch.setattr(routes, 'active_rubric', rubric)
++    class MissingWorker:
++        scope = 'shared'
++        def status(self):
++            return {'worker': {'available': False}}
++    with TestClient(app) as client:
++        original = app.state.db
++        app.state.db = SimpleNamespace(flow_store=MissingWorker())
++        app.dependency_overrides[user] = lambda: str(uuid4())
++        try:
++            response = client.post('/api/v1/evaluations', json={'resume_id': str(uuid4()), 'job_posting_id': str(uuid4())})
++            assert response.status_code == 503
++            assert '워커' in response.json()['detail']
++        finally:
++            app.state.db = original
++            app.dependency_overrides.clear()
++
++
++def test_idempotent_completed_run_recovery_does_not_require_live_worker(monkeypatch):
++    import app.api.v1.routes.api as routes
++    run = str(uuid4())
++    async def ready_resume(*args):
++        return {'parse_status': 'ready', 'original_text': 'synthetic resume'}
++    async def ready_job(*args):
++        return {'description': 'synthetic job'}
++    async def rubric(*args):
++        return ({'id': str(uuid4())}, {})
++    class MissingWorker:
++        scope = 'shared'
++        def status(self):
++            return {'worker': {'available': False}}
++    class DB:
++        flow_store = MissingWorker()
++        async def select(self, table, **filters):
++            assert table == 'evaluation_runs' and filters['idempotency_key'] == 'eq.repeat'
++            return [{'id': run, 'status': 'completed', 'input_fingerprint': 'same-fingerprint'}]
++    monkeypatch.setattr(routes, 'owned', ready_resume)
++    monkeypatch.setattr(routes, 'job', ready_job)
++    monkeypatch.setattr(routes, 'active_rubric', rubric)
++    monkeypatch.setattr(routes, 'digest', lambda value: 'same-fingerprint')
++    with TestClient(app) as client:
++        original = app.state.db
++        app.state.db = DB()
++        app.dependency_overrides[user] = lambda: str(uuid4())
++        try:
++            response = client.post('/api/v1/evaluations', json={'resume_id': str(uuid4()), 'job_posting_id': str(uuid4())},
++                                   headers={'Idempotency-Key': 'repeat'})
++            assert response.status_code == 202
++            assert response.json()['run_id'] == run and response.json()['status'] == 'completed'
++        finally:
++            app.state.db = original
++            app.dependency_overrides.clear()
++
++
++@pytest.mark.asyncio
++async def test_progress_publishes_without_private_messages():
++    store = MemoryFlowStore()
++    db = SimpleNamespace(flow_store=store)
++    ident = str(uuid4())
++    await observe_progress(db, ident, 'criterion', 'B1 · private resume must not pass', 24, 'running')
++    event = store.read()['events'][0]['envelope']['event']
++    assert event['node'] == 'domain_b' and event['criterion'] == 'B1'
++    assert 'private' not in json.dumps(event)
++
++
++@pytest.mark.asyncio
++async def test_worker_survives_transient_claim_outages(monkeypatch):
++    import workers.evaluation as worker
++    calls, sleeps = [], []
++    class DB:
++        async def rpc(self, name, body):
++            calls.append(name)
++            if len(calls) < 3:
++                raise ConnectionError('private network detail')
++            if len(calls) == 3:
++                return []
++            raise asyncio.CancelledError()
++    async def sleep(seconds):
++        sleeps.append(seconds)
++    monkeypatch.setattr(worker.asyncio, 'sleep', sleep)
++    with pytest.raises(asyncio.CancelledError):
++        await worker.serve(DB(), None, SimpleNamespace(worker_lease_seconds=180, worker_poll_seconds=3), 'worker', None)
++    assert sleeps == [3, 6, 3]
++    assert len(calls) == 4
+diff --git a/tests/test_telemetry_metadata.py b/tests/test_telemetry_metadata.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..bebd601c421554c44b063303573e82f67717d9c8
+--- /dev/null
++++ b/tests/test_telemetry_metadata.py
+@@ -0,0 +1,157 @@
++import asyncio
++import json
++from hashlib import sha256
++from types import SimpleNamespace
++
++import pytest
++from pydantic import BaseModel, SecretStr
++
++import app.agent.graphs.matching as matching
++from app.core.telemetry import observe_tool
++from app.integrations.llm.client import LLM
++
++
++@pytest.mark.asyncio
++async def test_tool_observation_preserves_result_and_does_not_record_private_values():
++    recorded, calls = [], []
++    result = [{'content': 'PRIVATE RESUME', 'embedding': [0.5]}]
++
++    def operation():
++        calls.append(True)
++        return result
++
++    async def audit(record):
++        recorded.append(record)
++
++    actual = await observe_tool('lexical_search', operation, audit, criterion_code='A1')
++
++    assert actual is result
++    assert len(calls) == 1
++    assert recorded[0]['result_count'] == 1
++    assert recorded[0]['status'] == 'completed'
++    assert recorded[0]['criterion_code'] == 'A1'
++    assert recorded[0]['duration_ms'] >= 0
++    assert 'PRIVATE RESUME' not in json.dumps(recorded)
++    assert 'embedding' not in recorded[0]
++
++
++@pytest.mark.asyncio
++async def test_tool_failure_is_preserved_and_recorded_without_exception_message(caplog):
++    recorded = []
++    original = ValueError('PRIVATE UPSTREAM CONTENT')
++
++    async def operation():
++        raise original
++
++    async def audit(record):
++        recorded.append(record)
++        raise RuntimeError('PRIVATE DATABASE ERROR')
++
++    with pytest.raises(ValueError) as caught:
++        await observe_tool('vector_search', operation, audit)
++
++    assert caught.value is original
++    assert recorded[0]['status'] == 'failed'
++    assert recorded[0]['error_type'] == 'ValueError'
++    assert recorded[0]['result_count'] is None
++    assert 'PRIVATE' not in json.dumps(recorded)
++    assert 'PRIVATE' not in caplog.text
++
++
++@pytest.mark.asyncio
++async def test_optional_telemetry_failure_does_not_fail_successful_operation():
++    async def audit(record):
++        raise RuntimeError('unavailable')
++
++    assert await observe_tool('index_save', lambda: [], audit) == []
++
++
++@pytest.mark.asyncio
++async def test_cancelled_tool_stays_cancelled_and_is_not_reported_as_failed():
++    recorded = []
++
++    async def operation():
++        raise asyncio.CancelledError()
++
++    async def audit(record):
++        recorded.append(record)
++
++    with pytest.raises(asyncio.CancelledError):
++        await observe_tool('query_embedding', operation, audit)
++    assert recorded[0]['status'] == 'cancelled'
++    assert recorded[0]['result_count'] is None
++
++
++@pytest.mark.asyncio
++async def test_graph_observes_only_the_real_lexical_call_for_a_fixed_criterion(monkeypatch):
++    observed, operations = [], []
++    state = {
++        'resume': {'skills': [], 'careers': [], 'education': [], 'projects': [],
++                   'explicit_no_employment': False, 'no_employment_evidence': []},
++        'job': {'title': 'job', 'company_name': 'company', 'responsibilities': [],
++                'technical_requirements': [], 'preferred_requirements': [],
++                'other_required_conditions': [], 'career_min_months': None,
++                'education_level': None, 'required_major': None, 'conditions_evidence': []},
++        'resume_text': 'PRIVATE RESUME',
++        'job_text': 'PRIVATE JOB', 'finance': {}, 'chunks': [], 'as_of': '2026-10-12',
++    }
++
++    def search(chunks, query):
++        operations.append((chunks, query))
++        return []
++
++    async def audit(record):
++        observed.append(record)
++
++    async def trace(state, code, result):
++        pass
++
++    monkeypatch.setattr(matching, 'lexical_search', search)
++    result = await matching.EvaluationEngine(None, trace, tool_audit=audit).evaluate(state, 'C1')
++    assert result['score'] == 100
++    assert len(operations) == 1
++    assert [row['name'] for row in observed] == ['lexical_search']
++    assert observed[0]['criterion_code'] == 'C1'
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize('fail', [False, True])
++async def test_llm_audit_hashes_exact_instruction_and_response_schema_without_request_changes(fail):
++    class Output(BaseModel):
++        summary: str
++
++    requests, recorded = [], []
++    result = Output(summary='result')
++    response = SimpleNamespace(output_parsed=result, output_text='result', usage=None)
++
++    async def parse(**kwargs):
++        requests.append(kwargs)
++        if fail:
++            raise ValueError('provider failure')
++        return response
++
++    async def audit(record):
++        recorded.append(record)
++
++    llm = object.__new__(LLM)
++    llm.config = SimpleNamespace(openai_api_key=SecretStr('test'), openai_model='test-model')
++    llm.client = SimpleNamespace(responses=SimpleNamespace(parse=parse))
++    llm.limit = asyncio.Semaphore(1)
++    instruction, payload = '정적 지시문', 'PRIVATE INPUT'
++    if fail:
++        with pytest.raises(ValueError):
++            await llm.parse(Output, instruction, payload, audit=audit)
++    else:
++        assert await llm.parse(Output, instruction, payload, audit=audit) is result
++
++    assert len(requests) == 1
++    assert requests[0]['input'] == [
++        {'role': 'system', 'content': instruction}, {'role': 'user', 'content': payload},
++    ]
++    assert requests[0]['text_format'] is Output
++    assert recorded[0]['prompt_hash'] == sha256(instruction.encode('utf-8')).hexdigest()
++    expected_schema = json.dumps(Output.model_json_schema(), ensure_ascii=False, sort_keys=True, separators=(',', ':'))
++    assert recorded[0]['schema_hash'] == sha256(expected_schema.encode('utf-8')).hexdigest()
++    assert recorded[0]['request_hash'] == sha256((instruction + '\0' + payload).encode('utf-8')).hexdigest()
++    assert recorded[0]['success'] is not fail
++    assert payload not in json.dumps(recorded)

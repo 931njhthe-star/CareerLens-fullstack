@@ -93,7 +93,7 @@ function routeFixture({ member = false, draft = {}, edits = {} } = {}) {
   };
   const context = vm.createContext({
     beginFlowEvent: flow.begin, finishFlowEvent: flow.finish, recordFlowEvent: flow.record,
-    observeFlowProgress() {}, setFlowSession() {}, mountFlowLauncher() {},
+    observeFlowProgress() {}, endFlowObservation() {}, setFlowSession() {}, mountFlowLauncher() {},
     document,
     location,
     history: {

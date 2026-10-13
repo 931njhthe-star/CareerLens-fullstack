@@ -5,11 +5,42 @@ import {
   isDemoSessionEnabled,
   isBackendAdapterEnabled,
   acceptBackendAuthCallback,
+  captureBackendSession,
+  assertBackendSession,
+  storeBackendCredentials,
 } from './backend-adapter.js';
 import { publicErrorMessage, safeErrorCode, safeErrorStatus } from './error-messages.js';
 import { beginFlowEvent, finishFlowEvent, classifyFlowRequest, recordFlowEvent } from '../../features/activity-flow/events.js';
 
 let csrfToken = '';
+let refreshInFlight = null;
+
+async function refreshSession(session) {
+  assertBackendSession(session);
+  if (captureBackendSession().token !== session.token) return;
+  if (!refreshInFlight || refreshInFlight.generation !== session.generation) {
+    const pending = { generation: session.generation };
+    pending.promise = (async () => {
+      let refreshed;
+      try {
+        refreshed = await requestApi('/auth/refresh', {
+          method: 'POST', auth: false,
+          body: { refresh_token: sessionStorage.getItem('careerlens.backend.refresh-token') },
+        }, false);
+      } catch (error) {
+        assertBackendSession(session);
+        throw error;
+      }
+      assertBackendSession(session);
+      if (typeof refreshed.access_token !== 'string' || !refreshed.access_token)
+        throw new ApiError('', 401, 'unauthorized');
+      storeBackendCredentials(refreshed, session);
+    })().finally(() => { if (refreshInFlight === pending) refreshInFlight = null; });
+    refreshInFlight = pending;
+  }
+  await refreshInFlight.promise;
+  assertBackendSession(session);
+}
 
 export function setSession(session) {
   csrfToken = session.csrf_token || '';
@@ -46,6 +77,9 @@ async function requestApi(
   { method = 'GET', body, signal, auth = true, keepalive, accessToken, idempotencyKey } = {},
   retry = true,
 ) {
+  const activeSession = isBackendAdapterEnabled() && auth ? captureBackendSession() : null;
+  // A callback's candidate token must never refresh or retry with an old login.
+  const ownerSession = activeSession && (!accessToken || accessToken === activeSession.token) ? activeSession : null;
   const headers = { Accept: 'application/json' };
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   if (!['GET', 'HEAD'].includes(method)) headers['X-CSRF-Token'] = csrfToken;
@@ -57,8 +91,22 @@ async function requestApi(
   }
   const multipart = body instanceof FormData;
   if (body !== undefined && !multipart) headers['Content-Type'] = 'application/json';
-  const observation = beginFlowEvent(classifyFlowRequest(path), { kind: 'request', method });
+  // A 404 here selects the compatible backend contract in getSession; it is
+  // not a rejected login. Defer this one discovery request until its outcome
+  // is known, so no false pending/failure reaches another observer either.
+  const sessionProbe = path === '/auth/session' && method === 'GET' && !isBackendAdapterEnabled();
+  const observationStarted = Date.now();
+  const observation = sessionProbe || /^\/flow(?:\/|$)/.test(path) ? null : beginFlowEvent(classifyFlowRequest(path), { kind: 'request', method });
   let response;
+  let probeRecorded = false;
+  function finishObservation({ state = 'complete' } = {}) {
+    if (!sessionProbe) return finishFlowEvent(observation, { state });
+    if (probeRecorded) return;
+    probeRecorded = true;
+    if (response?.status !== 404) recordFlowEvent('api_session', {
+      kind: 'request', method, state, durationMs: Math.max(0, Date.now() - observationStarted),
+    });
+  }
   try {
     response = await fetch(`/api/v1${path}`, {
       method,
@@ -70,7 +118,8 @@ async function requestApi(
       body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
     });
   } catch (error) {
-    finishFlowEvent(observation, { state: error?.name === 'AbortError' ? 'cancelled' : 'failed' });
+    finishObservation({ state: error?.name === 'AbortError' ? 'cancelled' : 'failed' });
+    if (ownerSession) assertBackendSession(ownerSession, signal);
     if (error?.name === 'AbortError') throw error;
     throw new ApiError('', 0, 'network_error');
   }
@@ -78,55 +127,41 @@ async function requestApi(
   try {
     data = response.status === 204 ? {} : await response.json();
   } catch (error) {
-    finishFlowEvent(observation, { state: error?.name === 'AbortError' ? 'cancelled' : 'failed' });
+    finishObservation({ state: error?.name === 'AbortError' ? 'cancelled' : 'failed' });
     if (error?.name === 'AbortError') throw error;
     if (response.ok) throw new ApiError('', 502, 'invalid_response');
   }
+  if (ownerSession) {
+    try { assertBackendSession(ownerSession, signal); }
+    catch (error) { finishObservation({ state: 'cancelled' }); throw error; }
+  }
   if (!response.ok) {
-    finishFlowEvent(observation, { state: 'failed' });
+    finishObservation({ state: 'failed' });
     if (
       response.status === 401 &&
       retry &&
       isBackendAdapterEnabled() &&
-      auth &&
+      ownerSession &&
       sessionStorage.getItem('careerlens.backend.refresh-token')
     ) {
-      let refreshed;
       try {
-        refreshed = await requestApi(
-          '/auth/refresh',
-          {
-            method: 'POST',
-            body: {
-              refresh_token: sessionStorage.getItem('careerlens.backend.refresh-token'),
-            },
-            auth: false,
-            signal,
-          },
-          false,
-        );
+        await refreshSession(ownerSession);
+        assertBackendSession(ownerSession, signal);
       } catch (error) {
         if (error?.status === 400 || error?.status === 401 || error?.status === 403)
           throw new ApiError('', 401, 'unauthorized');
         throw error;
       }
-      if (typeof refreshed.access_token === 'string' && refreshed.access_token) {
-        sessionStorage.setItem('careerlens.backend.access-token', refreshed.access_token);
-        if (refreshed.refresh_token)
-          sessionStorage.setItem('careerlens.backend.refresh-token', refreshed.refresh_token);
-        recordFlowEvent('local_data');
-        return requestApi(path, { method, body, signal, auth, keepalive, idempotencyKey }, false);
-      }
-      throw new ApiError('', 401, 'unauthorized');
+      return requestApi(path, { method, body, signal, auth, keepalive, idempotencyKey }, false);
     }
     // Codes select application-owned text. Remote message/detail fields are never displayed.
     throw new ApiError('', response.status, data?.error?.code, { path });
   }
   if (!data || typeof data !== 'object') {
-    finishFlowEvent(observation, { state: 'failed' });
+    finishObservation({ state: 'failed' });
     throw new ApiError('', 502, 'invalid_response');
   }
-  finishFlowEvent(observation);
+  finishObservation();
   if (method === 'POST' && ((path === '/auth/signup' && typeof data.user_id === 'string') || (path === '/resumes' && typeof data.id === 'string')))
     recordFlowEvent('storage_ack', { source: 'backend', method });
   return data;

@@ -1,0 +1,32 @@
+flowchart LR
+  subgraph client ["같은 브라우저·프로필·서비스 주소"]
+    pairA["작업 창 A + 전용 이용 흐름 A"]
+    pairB["작업 창 B + 전용 이용 흐름 B"]
+    pairC["작업 창 C + 전용 이용 흐름 C"]
+  end
+  subgraph gateway ["접속 경로"]
+    entry["로컬 5300 / 배포 HTTPS Caddy"]
+  end
+  subgraph service ["서버 처리"]
+    frontend["프론트 서버 - API 프록시·비회원 계산·회원 화면"]
+    backend["원본 FastAPI - 기준 3863f6e"]
+    worker["원본 회원 평가 워커"]
+  end
+  subgraph datastore ["저장소"]
+    guestStore["비공개 SQLite - 임시·계정 연결 보고서"]
+    supabase["Supabase - 인증·DB 작업큐·보고서·Storage"]
+  end
+  subgraph external ["외부 모델"]
+    model["LLM·임베딩 API"]
+  end
+  pairA -->|"화면·API 요청"| entry
+  pairB -->|"화면·API 요청"| entry
+  pairC -->|"화면·API 요청"| entry
+  entry -->|"정적 화면·동일 출처 API"| frontend
+  frontend -->|"기존 회원 API"| backend
+  frontend -->|"비회원 결과 보관·계정 연결"| guestStore
+  frontend -.->|"프론트: 기존 엔진 재사용"| model
+  backend -->|"로그인·이력서·실행·결과"| supabase
+  backend -->|"DB 작업큐를 경유해 처리"| worker
+  worker -->|"작업 조회·진행·보고서 저장"| supabase
+  worker -.->|"워커: 실제 평가"| model

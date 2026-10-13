@@ -92,7 +92,6 @@ export function mountFlowMotion(root, { reducedMotion = false, theme = 'dark' } 
   let destroyed = false;
   let inViewport = true;
   let lastPaint = -Infinity;
-  let staticHighlight = null;
   let palette = PALETTES[theme === 'light' ? 'light' : 'dark'];
 
   canvas.setAttribute('aria-hidden', 'true');
@@ -251,7 +250,6 @@ export function mountFlowMotion(root, { reducedMotion = false, theme = 'dark' } 
     if (destroyed || !width || !height) return;
     ctx.clearRect(0, 0, width, height);
     ctx.drawImage(base, 0, 0, width, height);
-    if (staticHighlight) paintNode(staticHighlight.node, palette[staticHighlight.color], 0, true);
     for (const [id, item] of active) paintNode(id, palette[item.color], 0, true);
     for (const ring of rings) {
       if (now >= ring.start) paintNode(ring.node, palette[ring.color], clamp((now - ring.start) / ring.duration, 0, 1));
@@ -316,7 +314,6 @@ export function mountFlowMotion(root, { reducedMotion = false, theme = 'dark' } 
     frame = 0;
     packets.length = 0;
     rings.length = 0;
-    staticHighlight = null;
     if (clearActive) active.clear();
     draw();
   }
@@ -340,7 +337,8 @@ export function mountFlowMotion(root, { reducedMotion = false, theme = 'dark' } 
     if (!nodes.has(id)) return;
     const color = stateColor(id, state);
     if (reducedMotion) {
-      staticHighlight = { node: id, color };
+      // Finite card colour supplies reduced-motion feedback. Do not leave a
+      // canvas outline behind after a completed event.
       draw();
       return;
     }

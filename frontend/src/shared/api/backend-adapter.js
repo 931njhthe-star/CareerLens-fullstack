@@ -23,6 +23,59 @@ let backendJobLists = new WeakMap();
 
 let enabled = false;
 
+// A refreshed bearer token belongs to the same browser login. A new login,
+// logout, or externally replaced token invalidates every in-flight owner guard.
+let sessionGeneration = 0;
+let sessionStorageOwner;
+let knownAccessToken = null;
+
+export function captureBackendSession() {
+  const token = sessionStorage.getItem(ACCESS_KEY);
+  if (sessionStorageOwner !== sessionStorage || knownAccessToken !== token) {
+    sessionGeneration += 1;
+    sessionStorageOwner = sessionStorage;
+    knownAccessToken = token;
+  }
+  return { generation: sessionGeneration, token };
+}
+
+export function assertBackendSession(session, signal) {
+  signal?.throwIfAborted();
+  if (captureBackendSession().generation !== session.generation)
+    throw new DOMException('계정이 변경되어 요청을 취소했습니다.', 'AbortError');
+}
+
+export function storeBackendCredentials(credentials, refreshedSession = null) {
+  if (refreshedSession) assertBackendSession(refreshedSession);
+  else {
+    captureBackendSession();
+    sessionGeneration += 1;
+  }
+  sessionStorage.setItem(ACCESS_KEY, credentials.access_token);
+  if (credentials.refresh_token) sessionStorage.setItem(REFRESH_KEY, credentials.refresh_token);
+  else if (!refreshedSession) sessionStorage.removeItem(REFRESH_KEY);
+  knownAccessToken = credentials.access_token;
+  sessionStorageOwner = sessionStorage;
+  recordFlowEvent('local_data');
+}
+
+function ownerBoundRequest(transport, signal) {
+  const session = captureBackendSession();
+  const request = async (...args) => {
+    assertBackendSession(session, signal);
+    let result;
+    try { result = await transport(...args); }
+    catch (failure) {
+      if (failure?.name !== 'AbortError') assertBackendSession(session, signal);
+      throw failure;
+    }
+    assertBackendSession(session, signal);
+    return result;
+  };
+  request.ApiError = transport.ApiError;
+  return { request, assertCurrentOwner: () => assertBackendSession(session, signal) };
+}
+
 const mockPostings = [
   {
     id: 'mock-backend-engineer',
@@ -213,11 +266,9 @@ function localReportWorkspace(result, ApiError) {
 }
 
 async function readLocalReport(id, request, signal) {
-  const token = sessionStorage.getItem(ACCESS_KEY);
-  const value = await request(`/local-guest/reports/${encodeURIComponent(id)}`, { signal, accessToken: token });
-  signal?.throwIfAborted();
-  if (sessionStorage.getItem(ACCESS_KEY) !== token)
-    throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+  const session = captureBackendSession();
+  const value = await request(`/local-guest/reports/${encodeURIComponent(id)}`, { signal });
+  assertBackendSession(session, signal);
   return value;
 }
 
@@ -255,6 +306,12 @@ function guestProgress(state, onProgress, metadata) {
 
 async function runGuestAnalysis(request, signal, onProgress) {
   let guest = guestState();
+  // A terminal run cannot resume. Only the user's next explicit attempt starts
+  // another run; uncertain or still-running requests keep their existing key.
+  if (['failed', 'cancelled'].includes(guest.local_run?.status)) {
+    saveGuest({ local_run: null, completed: false, report_locked: false });
+    guest = guestState();
+  }
   if (!guest.local_run?.idempotency_key) {
     saveGuest({ local_run: { idempotency_key: crypto.randomUUID(), status: 'queued' }, completed: false,
       report_locked: false, preview_ready: false, analysis_pending: false });
@@ -814,6 +871,8 @@ async function savedReportList(path, request, signal, ApiError) {
     error(ApiError, '보고서 목록 위치가 올바르지 않습니다.', 400, 'report_offset_invalid');
   if (demoSession()) return { items: [], next_offset: null, demo: true };
   requireReportSession(ApiError);
+  const hasLocalReports = localGuestStores.get(request) === true;
+  request = ownerBoundRequest(request, signal).request;
   const runs = await request(`/evaluations?limit=${REPORT_PAGE_SIZE}&offset=${offset}`, { signal });
   if (
     !Array.isArray(runs) ||
@@ -831,17 +890,13 @@ async function savedReportList(path, request, signal, ApiError) {
   if (nextOffset !== null && !Number.isSafeInteger(nextOffset))
     error(ApiError, '보고서의 다음 목록 위치가 올바르지 않습니다.', 502, 'report_offset_invalid');
   let localItems = [];
-  if (offset === 0 && localGuestStores.get(request) === true) {
-    const token = sessionStorage.getItem(ACCESS_KEY);
-    const response = await request('/local-guest/reports', { signal, accessToken: token });
-    signal?.throwIfAborted();
-    if (sessionStorage.getItem(ACCESS_KEY) !== token)
-      throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+  if (offset === 0 && hasLocalReports) {
+    const response = await request('/local-guest/reports', { signal });
     if (!Array.isArray(response.reports))
       error(ApiError, '저장한 보고서 목록 형식이 올바르지 않습니다.', 502, 'report_list_invalid');
     localItems = response.reports.filter((item) => ['completed', 'partial'].includes(item.status))
       .map((item) => ({ id: `${LOCAL_GUEST_PREFIX}${item.run_id}`, status: item.status,
-        created_at: item.created_at, storage_origin: 'frontend_guest',
+        created_at: item.created_at, storage_origin: 'frontend_guest', can_delete: true,
         job_context: { title: item.title || '', company: item.company_name || '' } }));
   }
   const items = runs
@@ -886,6 +941,7 @@ async function storedReportBody(id, request, signal, ApiError) {
 }
 
 async function savedReportContext(encodedId, request, signal, ApiError) {
+  request = ownerBoundRequest(request, signal).request;
   const id = savedReportId(encodedId, ApiError);
   if (localRunId(id)) {
     const workspace = localReportWorkspace(await readLocalReport(localRunId(id), request, signal), ApiError);
@@ -908,6 +964,7 @@ function backendReportDate(run = {}, result = {}, report = {}) {
 }
 
 async function savedReportWorkspace(encodedId, request, signal, ApiError) {
+  request = ownerBoundRequest(request, signal).request;
   const id = savedReportId(encodedId, ApiError);
   if (localRunId(id)) return localReportWorkspace(await readLocalReport(localRunId(id), request, signal), ApiError);
   const run = await request(`/evaluations/${encodeURIComponent(id)}`, { signal });
@@ -1067,26 +1124,19 @@ async function backendJobs(request, catalogPostings = [], signal) {
 
 async function getMemberWorkspace(request, signal) {
   const transport = request;
-  const originalToken = sessionStorage.getItem(ACCESS_KEY);
-  const assertCurrentOwner = () => {
-    signal?.throwIfAborted();
-    if (sessionStorage.getItem(ACCESS_KEY) !== originalToken)
-      throw new DOMException('계정이 변경되어 작업 공간 조회를 취소했습니다.', 'AbortError');
-  };
+  const owner = ownerBoundRequest(request, signal);
+  const assertCurrentOwner = owner.assertCurrentOwner;
   // A workspace can span several requests without an AbortSignal. Keep every
   // response and state write bound to the account that started this load.
-  request = async (...args) => {
-    assertCurrentOwner();
-    const result = await transport(...args);
-    assertCurrentOwner();
-    return result;
-  };
-  request.ApiError = transport.ApiError;
+  request = owner.request;
   const user = await backendUser(request, signal);
   const key = `${STATE_KEY}:${user.id}`;
   const saveState = (value) => {
     assertCurrentOwner();
-    storageSet(key, value);
+    // A slower workspace read must not erase another request's creation intent.
+    const current = storageGet(key, {});
+    storageSet(key, { ...value, ...(Object.hasOwn(current, 'pending_evaluation')
+      ? { pending_evaluation: current.pending_evaluation } : {}) });
   };
   let state = storageGet(key, {});
   let restoredLocalReport = null;
@@ -1162,10 +1212,7 @@ async function getMemberWorkspace(request, signal) {
     }
   }
   if (restoreLatest && localGuestStores.get(transport) === true) {
-    const token = sessionStorage.getItem(ACCESS_KEY);
-    const response = await request('/local-guest/reports', { signal, accessToken: token });
-    signal?.throwIfAborted();
-    if (sessionStorage.getItem(ACCESS_KEY) !== token) throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+    const response = await request('/local-guest/reports', { signal });
     const latest = Array.isArray(response.reports)
       ? response.reports.filter((item) => ['completed', 'partial'].includes(item.status))
         .sort((a, b) => Date.parse(b.completed_at || b.created_at) - Date.parse(a.completed_at || a.created_at))[0]
@@ -1232,7 +1279,12 @@ function unavailablePreparation() {
 }
 
 async function runBackendAnalysis(request, signal, onProgress) {
+  const transport = request;
+  const session = captureBackendSession();
+  const owner = ownerBoundRequest(request, signal);
   const { workspace, state, key } = await getMemberWorkspace(request, signal);
+  owner.assertCurrentOwner();
+  request = owner.request;
   if (!workspace.draft.resume_id)
     error(
       request.ApiError,
@@ -1248,14 +1300,32 @@ async function runBackendAnalysis(request, signal, onProgress) {
       'backend_posting_required',
     );
 
-  signal?.throwIfAborted();
-  const started = await request('/evaluations', {
-    method: 'POST',
-    body: {
-      resume_id: workspace.draft.resume_id,
-      job_posting_id: state.selected_posting_id,
-    },
-  });
+  const input = { resume_id: workspace.draft.resume_id, job_posting_id: state.selected_posting_id };
+  const previous = storageGet(key, state).pending_evaluation;
+  const attempt = previous && previous.resume_id === input.resume_id && previous.job_posting_id === input.job_posting_id &&
+    typeof previous.idempotency_key === 'string' && previous.idempotency_key &&
+    Number.isFinite(previous.created_at) && Date.now() - previous.created_at < 24 * 60 * 60_000
+    ? previous : { ...input, idempotency_key: crypto.randomUUID(), created_at: Date.now() };
+  const saveAttempt = (value) => {
+    owner.assertCurrentOwner();
+    const current = storageGet(key, state);
+    if (value === null && current.pending_evaluation?.idempotency_key !== attempt.idempotency_key) return;
+    storageSet(key, { ...current, pending_evaluation: value });
+  };
+  // Persist before transport: retrying a lost response must recover the same run.
+  saveAttempt(attempt);
+  let started;
+  try {
+    // Keep the creation response observable after user cancellation so the UI
+    // can cancel a run accepted concurrently; never use a replacement login.
+    started = await transport('/evaluations', { method: 'POST', body: input, idempotencyKey: attempt.idempotency_key });
+    assertBackendSession(session);
+  } catch (failure) {
+    if ([400, 404, 409, 413, 422].includes(failure.status)) saveAttempt(null);
+    throw failure;
+  }
+  if (typeof started?.run_id !== 'string' || !started.run_id)
+    error(request.ApiError, '분석 요청 결과를 확인하지 못했습니다. 다시 시도해 주세요.', 502, 'invalid_response');
   const runId = started.run_id;
   let lastEventId = 0;
   onProgress?.({
@@ -1294,7 +1364,8 @@ async function runBackendAnalysis(request, signal, onProgress) {
       events: [],
       flowEvents: sanitizeFlowProgressEvents(update.events),
     });
-    if (['failed', 'cancelled'].includes(status.status))
+    if (['failed', 'cancelled'].includes(status.status)) {
+      saveAttempt(null);
       error(
         request.ApiError,
         status.status === 'cancelled'
@@ -1303,6 +1374,7 @@ async function runBackendAnalysis(request, signal, onProgress) {
         502,
         status.status === 'cancelled' ? 'evaluation_cancelled' : 'evaluation_failed',
       );
+    }
     if (['completed', 'partial'].includes(status.status)) {
       // A throttled tab may receive a terminal run with an older full event page.
       // Drain bounded pages before showing the final report; telemetry failure
@@ -1344,8 +1416,10 @@ async function runBackendAnalysis(request, signal, onProgress) {
           'final_report_empty',
         );
       const mapped = mapBackendReport(result, report.report_text, status);
+      owner.assertCurrentOwner();
       storageSet(key, {
-        ...state,
+        ...storageGet(key, state),
+        pending_evaluation: null,
         pending_guest_analysis: false,
         report: mapped,
         suppress_latest_report: false,
@@ -1460,11 +1534,10 @@ export async function acceptBackendAuthCallback({ accessToken, refreshToken }, r
       'auth_callback_invalid',
     );
   // Validate the new identity before replacing a working session or its guest binding.
-  const profile = await request('/me', { auth: false, accessToken });
+  const validationRequest = ownerBoundRequest(request).request;
+  const profile = await validationRequest('/me', { auth: false, accessToken });
   const user = profileUser(profile, ApiError);
-  sessionStorage.setItem(ACCESS_KEY, accessToken);
-  sessionStorage.setItem(REFRESH_KEY, refreshToken);
-  recordFlowEvent('local_data');
+  storeBackendCredentials({ access_token: accessToken, refresh_token: refreshToken });
   storageRemove(DEMO_SESSION_KEY);
   enabled = true;
   return makeSession({
@@ -1497,9 +1570,16 @@ export async function backendApi(path, options, request, ApiError) {
   const body = options.body;
   const signal = options.signal;
   const cleanPath = decodePath(path);
+  // A mutation can span conversion, profile, storage and workspace requests.
+  // Bind that complete operation before its first await, not each HTTP call
+  // separately, so an account change cannot redirect a later write.
+  if (!['GET', 'HEAD'].includes(method) && !/^\/(?:auth|guest|flow)(?:\/|$)/.test(cleanPath))
+    request = ownerBoundRequest(request).request;
+  if (/^\/flow(?:\/|$)/.test(cleanPath))
+    return request(path, { method, body, signal, keepalive: options.keepalive });
   if (/^\/admin\/evaluation-performance(?:\/[0-9a-f-]{36})?$/i.test(cleanPath) && method === 'GET') {
-    // Dashboard access is temporarily public; it does not grant account privileges.
-    return request(path, { signal, auth: false });
+    requireReportSession(ApiError);
+    return request(path, { signal });
   }
   if (cleanPath === '/account/reports' && method === 'GET')
     return savedReportList(path, request, signal, ApiError);
@@ -1513,11 +1593,11 @@ export async function backendApi(path, options, request, ApiError) {
     const id = savedReportId(savedReport[1], ApiError);
     const localId = localRunId(id);
     if (!localId) error(ApiError, '현재 서버에서 보고서 삭제를 지원하지 않습니다.', 501);
-    const token = sessionStorage.getItem(ACCESS_KEY);
+    const session = captureBackendSession();
     const user = await backendUser(request, signal);
-    if (sessionStorage.getItem(ACCESS_KEY) !== token) throw new DOMException('계정이 변경되었습니다.', 'AbortError');
-    await request(`/local-guest/reports/${encodeURIComponent(localId)}`, { method: 'DELETE', signal, accessToken: token });
-    if (sessionStorage.getItem(ACCESS_KEY) !== token) throw new DOMException('계정이 변경되었습니다.', 'AbortError');
+    assertBackendSession(session, signal);
+    await request(`/local-guest/reports/${encodeURIComponent(localId)}`, { method: 'DELETE', signal });
+    assertBackendSession(session, signal);
     const key = `${STATE_KEY}:${user.id}`;
     const state = storageGet(key, {});
     if (state.report?.run_id === id) storageSet(key, { ...state, report: null, suppress_latest_report: true });
@@ -1537,11 +1617,16 @@ export async function backendApi(path, options, request, ApiError) {
   if (demoSession()) return demoApi(path, options, ApiError, catalog);
 
   if (cleanPath === '/auth/session') {
-    const token = sessionStorage.getItem(ACCESS_KEY);
-    if (!token) return makeSession(null, await probeLocalGuest(request, signal));
+    const session = captureBackendSession();
+    if (!session.token) {
+      const realGuest = await probeLocalGuest(request, signal);
+      assertBackendSession(session, signal);
+      return makeSession(null, realGuest);
+    }
     const capabilities = probeLocalGuest(request, signal);
     try {
       const [realGuest, user] = await Promise.all([capabilities, backendUser(request, signal)]);
+      assertBackendSession(session, signal);
       return makeSession({
         id: user.id,
         email: user.email || '',
@@ -1549,10 +1634,13 @@ export async function backendApi(path, options, request, ApiError) {
         is_admin: user.is_admin,
       }, realGuest);
     } catch (failure) {
+      assertBackendSession(session, signal);
       if (failure.status === 401) {
+        const realGuest = await capabilities;
+        assertBackendSession(session, signal);
         storageRemove(ACCESS_KEY);
         storageRemove(REFRESH_KEY);
-        return makeSession(null, await capabilities);
+        return makeSession(null, realGuest);
       }
       throw failure;
     }
@@ -1571,7 +1659,8 @@ export async function backendApi(path, options, request, ApiError) {
     });
 
   if (cleanPath === '/auth/login' && method === 'POST') {
-    const result = await request('/auth/login', {
+    const loginRequest = ownerBoundRequest(request, signal).request;
+    const result = await loginRequest('/auth/login', {
       method,
       body,
       signal,
@@ -1579,24 +1668,21 @@ export async function backendApi(path, options, request, ApiError) {
     });
     if (!result.access_token)
       error(ApiError, '백엔드가 access token을 반환하지 않았습니다.', 502, 'missing_access_token');
-    sessionStorage.setItem(ACCESS_KEY, result.access_token);
-    if (result.refresh_token) sessionStorage.setItem(REFRESH_KEY, result.refresh_token);
-    recordFlowEvent('local_data');
+    storeBackendCredentials(result);
     storageRemove(STATE_KEY);
     return { ...result, user: null, csrf_token: '' };
   }
 
   if (cleanPath === '/auth/register' && method === 'POST') {
-    const result = await request('/auth/signup', {
+    const signupRequest = ownerBoundRequest(request, signal).request;
+    const result = await signupRequest('/auth/signup', {
       method: 'POST',
       body: { email: body.email, password: body.password },
       signal,
       auth: false,
     });
     if (result.access_token) {
-      sessionStorage.setItem(ACCESS_KEY, result.access_token);
-      if (result.refresh_token) sessionStorage.setItem(REFRESH_KEY, result.refresh_token);
-      recordFlowEvent('local_data');
+      storeBackendCredentials(result);
     }
     return {
       ...result,
@@ -1611,6 +1697,7 @@ export async function backendApi(path, options, request, ApiError) {
   }
 
   if (cleanPath === '/auth/refresh' && method === 'POST') {
+    const session = captureBackendSession();
     const result = await request('/auth/refresh', {
       method,
       body,
@@ -1619,9 +1706,7 @@ export async function backendApi(path, options, request, ApiError) {
     });
     if (!result.access_token)
       error(ApiError, '로그인 세션을 갱신하지 못했습니다. 다시 로그인해 주세요.', 401);
-    sessionStorage.setItem(ACCESS_KEY, result.access_token);
-    if (result.refresh_token) sessionStorage.setItem(REFRESH_KEY, result.refresh_token);
-    recordFlowEvent('local_data');
+    storeBackendCredentials(result, session);
     return result;
   }
 
@@ -1957,13 +2042,12 @@ export async function backendApi(path, options, request, ApiError) {
         409,
         'guest_expired',
       );
-    const token = sessionStorage.getItem(ACCESS_KEY);
+    const session = captureBackendSession();
     const guestSnapshot = JSON.stringify(guest);
     let transferring = true;
     const assertCurrentClaim = () => {
-      signal?.throwIfAborted();
-      if (sessionStorage.getItem(ACCESS_KEY) !== token ||
-          (transferring && JSON.stringify(guestState()) !== guestSnapshot))
+      assertBackendSession(session, signal);
+      if (transferring && JSON.stringify(guestState()) !== guestSnapshot)
         throw new DOMException('계정 또는 임시 이력서가 변경되어 연결을 취소했습니다.', 'AbortError');
     };
     // Check both sides of every transport, including helpers and transports that
@@ -1977,7 +2061,7 @@ export async function backendApi(path, options, request, ApiError) {
     claimRequest.ApiError = request.ApiError;
     if (guest.local_run?.id) {
       const result = await claimRequest(`/local-guest/analyses/${encodeURIComponent(guest.local_run.id)}/claim`,
-        { method: 'POST', body: {}, signal, accessToken: token });
+        { method: 'POST', body: {}, signal, accessToken: session.token });
       // The frontend server has already authenticated this token against /me
       // and atomically assigned the report. Reuse its verified owner instead
       // of inserting another identity request before displaying the result.

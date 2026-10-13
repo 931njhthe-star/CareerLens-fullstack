@@ -39,6 +39,7 @@ import {
   finishFlowEvent,
   recordFlowEvent,
   observeFlowProgress,
+  endFlowObservation,
   setFlowSession,
   mountFlowLauncher,
 } from '../features/activity-flow/events.js';
@@ -48,6 +49,7 @@ const authPages = new Set(['login', 'email', 'signup', 'forgot', 'reset']);
 const workflowPages = new Set(['resume', 'desired-role', 'result']);
 const params = new URLSearchParams(location.search);
 const flowViewer = params.get('view') === 'flow';
+if (flowViewer && window.opener) window.opener = null;
 const resetToken = params.get('reset_token') || '';
 let authError = params.get('auth_error');
 let session;
@@ -234,6 +236,7 @@ async function selectPosting(posting, { continuePending = false } = {}) {
         .then((result) => {
           if (owner === session.user?.id && cancelRevision === viewRevision) applyGuestWorkspace(result);
           finishFlowEvent(cancellationObservation, { state: 'cancelled' });
+          endFlowObservation(analysisObservation, { confirmedCancelled: true });
           recordFlowEvent('guest_cleanup', { state: 'cancelled', execution: 'guest', source: flowSource() });
         })
         .catch(() => finishFlowEvent(cancellationObservation, { state: 'failed' }));
@@ -245,7 +248,10 @@ async function selectPosting(posting, { continuePending = false } = {}) {
       method: 'POST',
       body: {},
       keepalive: true,
-    }).then(() => finishFlowEvent(cancellationObservation)).catch((error) => {
+    }).then((result) => {
+      finishFlowEvent(cancellationObservation);
+      endFlowObservation(analysisObservation, { confirmedCancelled: result?.status === 'cancelled' });
+    }).catch((error) => {
       finishFlowEvent(cancellationObservation, {
         state: error.name === 'AbortError' ? 'cancelled' : 'failed',
       });
@@ -351,6 +357,7 @@ async function selectPosting(posting, { continuePending = false } = {}) {
         analysisObservationError?.code === 'evaluation_cancelled' ||
         (!analysisObservationError && loading.signal.aborted);
       finishFlowEvent(analysisObservation, { state: cancelled ? 'cancelled' : 'failed' });
+      endFlowObservation(analysisObservation);
     }
     // If no server run was ever created, this ends only the local operation;
     // it must not leave a pending marker or imply a confirmed server cancellation.
@@ -613,8 +620,8 @@ function render({ reportBridge } = {}) {
   if (opportunities) page = location.hash.replace(/^#\//, '');
   const savedReportRoute = /^reports\/([^/?#]+)$/.exec(page);
   const accountPage = isAccountPage(page);
-  if (accountPage && page !== 'admin' && !session.user) {
-    requireLogin(page, '마이페이지와 저장한 보고서는 로그인 후 확인할 수 있습니다.');
+  if (accountPage && !session.user) {
+    requireLogin(page, '마이페이지·대시보드·저장한 보고서는 로그인 후 확인할 수 있습니다.');
     return;
   }
   if (
@@ -622,7 +629,7 @@ function render({ reportBridge } = {}) {
     !authPages.has(page) &&
     !catalog &&
     !opportunities &&
-    !['intro', 'resume', 'desired-role', 'result', 'admin'].includes(page)
+    !['intro', 'resume', 'desired-role', 'result'].includes(page)
   )
     page = 'login';
   if (session.user && authPages.has(page) && page !== 'reset')
@@ -690,6 +697,11 @@ function render({ reportBridge } = {}) {
   }[page];
   document.title = `${catalog || opportunities ? '채용공고' : savedReportRoute ? '저장한 분석보고서' : title} · CareerLens`;
   if (page === 'admin') {
+    if (session.user?.demo === true) {
+      app.innerHTML = shell('<h1>회원 로그인 후 이용해 주세요.</h1><p>시연 계정에서는 운영 기록을 조회할 수 없습니다. 로그아웃 후 가입한 계정으로 로그인해 주세요.</p>', { user: session.user, page });
+      bindAccount();
+      return;
+    }
     app.innerHTML = shell(adminDashboard(session.user), {
       user: session.user,
       page,
@@ -973,9 +985,9 @@ function bindSavedReports() {
     error: '',
     nextOffset: null,
     demo: Boolean(session.user?.demo),
-    // The fetched backend has no report-deletion API. Never simulate a delete
-    // by removing a row locally; real deletion needs a confirmed server contract.
-    canDeleteReports: false,
+    // Deletion is enabled per report only when its storage adapter supports it.
+    deleting: false,
+    deleteError: '',
     selectedIds: [],
     query: '',
     status: '',
@@ -1024,6 +1036,7 @@ function bindSavedReports() {
     host.querySelectorAll('[data-report-select]').forEach((checkbox) =>
       checkbox.addEventListener('change', (event) => {
         const id = event.currentTarget.dataset.reportSelect;
+        if (state.deleting || !state.items.some((item) => item.id === id && item.can_delete === true)) return;
         state.selectedIds = event.currentTarget.checked
           ? [...new Set([...state.selectedIds, id])]
           : state.selectedIds.filter((selected) => selected !== id);
@@ -1035,8 +1048,9 @@ function bindSavedReports() {
     );
     host.querySelector('[data-reports-select-all]')?.addEventListener('change', (event) => {
       const visible = new Set(
-        filterSavedReports(state.items, state.query, state.status).map(({ id }) => id),
+        filterSavedReports(state.items, state.query, state.status).filter((item) => item.can_delete === true).map(({ id }) => id),
       );
+      if (state.deleting) return;
       state.selectedIds = event.currentTarget.checked
         ? [...new Set([...state.selectedIds, ...visible])]
         : state.selectedIds.filter((id) => !visible.has(id));
@@ -1045,6 +1059,9 @@ function bindSavedReports() {
     });
     const selectAll = host.querySelector('[data-reports-select-all]');
     if (selectAll) selectAll.indeterminate = selectAll.getAttribute?.('aria-checked') === 'mixed';
+    host.querySelectorAll('[data-report-delete]').forEach((button) =>
+      button.addEventListener('click', () => deleteReports([button.dataset.reportDelete])));
+    host.querySelector('[data-reports-delete-selected]')?.addEventListener('click', () => deleteReports(state.selectedIds));
     host.querySelectorAll('[data-report-context-retry]').forEach((button) =>
       button.addEventListener('click', () => {
         const item = state.items.find(({ id }) => id === button.dataset.reportContextRetry);
@@ -1059,6 +1076,48 @@ function bindSavedReports() {
       [...host.querySelectorAll(`[${activeAttribute}]`)]
         .find((node) => node.getAttribute(activeAttribute) === activeValue)
         ?.focus({ preventScroll: true });
+    }
+  }
+  async function deleteReports(ids) {
+    if (state.deleting || state.loading || !current()) return;
+    const supported = new Set(state.items.filter((item) => item.can_delete === true).map(({ id }) => id));
+    const requested = [...new Set(ids)].filter((id) => supported.has(id));
+    if (!requested.length || !window.confirm(`선택한 보고서 ${requested.length}개를 삭제할까요? 삭제한 보고서는 복구할 수 없습니다.`)) return;
+    state.deleting = true;
+    state.deleteError = '';
+    paint();
+    let failed = 0;
+    try {
+      for (const id of requested) {
+        if (!current()) return;
+        try {
+          const result = await observeFlowAction('history',
+            () => api(`/account/reports/${encodeURIComponent(id)}`, { method: 'DELETE', signal: controller.signal }), { current });
+          if (!current()) return;
+          if (result?.deleted !== true) throw new Error('Delete was not confirmed');
+          state.items = state.items.filter((item) => item.id !== id);
+          state.selectedIds = state.selectedIds.filter((selected) => selected !== id);
+          reportPickerState = {};
+          if (workspace.draft.report?.run_id === id) {
+            delete workspace.draft.report;
+            delete workspace.draft.created_at;
+            document.querySelector('.saved-reports__current')?.remove();
+          }
+        } catch (error) {
+          if (!current() || error.name === 'AbortError') return;
+          if (error.status === 401) {
+            host.replaceChildren();
+            await handleError(error);
+            return;
+          }
+          failed += 1;
+        }
+      }
+      if (failed) state.deleteError = `${failed}개 보고서를 삭제하지 못했습니다. 해당 보고서는 목록에 남아 있습니다. 연결 상태를 확인한 뒤 다시 삭제해 주세요.`;
+      if (!state.items.length) recordFlowEvent('history', { state: 'empty', source: flowSource() });
+    } finally {
+      state.deleting = false;
+      paint();
     }
   }
   function hydrateContexts(items) {
@@ -1103,7 +1162,7 @@ function bindSavedReports() {
     }
   }
   async function load(offset = 0) {
-    if (state.loading || offset === null || !current()) return;
+    if (state.loading || state.deleting || offset === null || !current()) return;
     failedOffset = offset;
     state.loading = true;
     state.error = '';
@@ -1560,8 +1619,8 @@ window.addEventListener('beforeunload', (event) => {
 
 async function start() {
   if (flowViewer) {
-    const { mountFlowViewer } = await import('../features/activity-flow/viewer.js');
-    mountFlowViewer(app);
+    const { mountMemberFlow } = await import('../features/auth/operations-access.js');
+    await mountMemberFlow(app);
     return;
   }
   mountFlowLauncher();

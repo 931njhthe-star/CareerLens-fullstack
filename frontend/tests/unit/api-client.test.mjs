@@ -154,3 +154,111 @@ test('unknown callback and adapter exceptions are normalized without changing Ab
   await assert.rejects(api('/account/reports/%E0%A4%A', { method: 'GET' }),
     (error) => assertSafe(error, error.status));
 });
+
+test('member workspace survives a same-login token refresh without accepting a different owner', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'expired-owner');
+  sessionStorage.setItem('careerlens.backend.refresh-token', 'owner-refresh');
+  sessionStorage.setItem('careerlens.backend.workspace:owner', JSON.stringify({ suppress_latest_report: true }));
+  await withFetch(async (url, options) => {
+    if (url.endsWith('/auth/refresh')) return Response.json({ access_token: 'renewed-owner', refresh_token: 'next-refresh' });
+    if (options.headers.Authorization === 'Bearer expired-owner') return Response.json({}, { status: 401 });
+    assert.equal(options.headers.Authorization, 'Bearer renewed-owner');
+    if (url.endsWith('/me')) return Response.json({ user_id: 'owner' });
+    if (url.endsWith('/resumes?limit=100')) return Response.json([]);
+    assert.fail(`Unexpected workspace request: ${url}`);
+  }, async () => {
+    const result = await api('/workspace');
+    assert.equal(result.draft.resume_text, '');
+    assert.equal(sessionStorage.getItem('careerlens.backend.access-token'), 'renewed-owner');
+  });
+});
+
+test('concurrent unauthorized requests share one refresh and an aborted caller cannot cancel another caller', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'expired-owner');
+  sessionStorage.setItem('careerlens.backend.refresh-token', 'owner-refresh');
+  let release;
+  let refreshing;
+  const refreshStarted = new Promise((resolve) => { refreshing = resolve; });
+  const controller = new AbortController();
+  let refreshes = 0;
+  await withFetch(async (url, options) => {
+    if (url.endsWith('/auth/refresh')) {
+      refreshes++;
+      assert.equal(options.signal, undefined);
+      refreshing();
+      return new Promise((resolve) => { release = () => resolve(Response.json({ access_token: 'renewed-owner' })); });
+    }
+    return options.headers.Authorization === 'Bearer expired-owner'
+      ? Response.json({}, { status: 401 }) : Response.json({ status: 'cancelled' });
+  }, async () => {
+    const first = api('/evaluations/one/cancel', { method: 'POST', signal: controller.signal });
+    const firstRejected = assert.rejects(first, { name: 'AbortError' });
+    const second = api('/evaluations/two/cancel', { method: 'POST' });
+    await refreshStarted;
+    controller.abort();
+    release();
+    await firstRejected;
+    assert.equal((await second).status, 'cancelled');
+    assert.equal(refreshes, 1);
+  });
+});
+
+test('a late refresh cannot restore logged-out credentials or overwrite a replacement login', async () => {
+  for (const replacement of [null, 'new-account-token']) {
+    sessionStorage.setItem('careerlens.backend.access-token', 'expired-owner');
+    sessionStorage.setItem('careerlens.backend.refresh-token', 'owner-refresh');
+    await withFetch(async (url) => {
+      if (url.endsWith('/auth/refresh')) {
+        await api('/auth/logout', { method: 'POST' });
+        if (replacement) sessionStorage.setItem('careerlens.backend.access-token', replacement);
+        return Response.json({ access_token: 'late-old-owner', refresh_token: 'late-refresh' });
+      }
+      return Response.json({}, { status: 401 });
+    }, async () => {
+      await assert.rejects(api('/evaluations/old/cancel', { method: 'POST' }), { name: 'AbortError' });
+      assert.equal(sessionStorage.getItem('careerlens.backend.access-token'), replacement);
+      assert.equal(sessionStorage.getItem('careerlens.backend.refresh-token'), null);
+    });
+  }
+});
+
+test('late owner responses are rejected even when the transport ignores account changes', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'owner-a');
+  await withFetch(async () => {
+    sessionStorage.setItem('careerlens.backend.access-token', 'owner-b');
+    return Response.json({ status: 'cancelled' });
+  }, () => assert.rejects(api('/evaluations/old/cancel', { method: 'POST' }), { name: 'AbortError' }));
+});
+
+test('a failed old refresh cannot log out a replacement account', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'expired-owner');
+  sessionStorage.setItem('careerlens.backend.refresh-token', 'owner-refresh');
+  await withFetch(async (url) => {
+    if (url.endsWith('/local-guest/capabilities')) return Response.json({ available: false });
+    if (url.endsWith('/auth/refresh')) {
+      sessionStorage.setItem('careerlens.backend.access-token', 'replacement-account');
+      sessionStorage.setItem('careerlens.backend.refresh-token', 'replacement-refresh');
+      return Response.json({}, { status: 401 });
+    }
+    return Response.json({}, { status: 401 });
+  }, async () => {
+    await assert.rejects(getSession(), { name: 'AbortError' });
+    assert.equal(sessionStorage.getItem('careerlens.backend.access-token'), 'replacement-account');
+    assert.equal(sessionStorage.getItem('careerlens.backend.refresh-token'), 'replacement-refresh');
+  });
+});
+
+test('central flow requests preserve optional member bearer tokens', async () => {
+  const calls = [];
+  await withFetch(async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ items: [] });
+  }, async () => {
+    await api('/flow/events', { method: 'POST', body: { batch: [] } });
+    sessionStorage.setItem('careerlens.backend.access-token', 'ordinary-member');
+    await api('/flow/sources?limit=100');
+    assert.equal(calls[0].options.headers.Authorization, undefined);
+    assert.equal(calls[1].options.headers.Authorization, 'Bearer ordinary-member');
+    assert.equal(calls[0].options.method, 'POST');
+  });
+});

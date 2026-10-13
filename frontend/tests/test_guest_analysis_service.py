@@ -430,3 +430,29 @@ def test_unavailable_runner_cannot_start_analysis(setup_service):
     assert client.get(PREFIX + "/capabilities").json["available"] is False
     assert start(client).status_code == 503
     assert service._executor is None
+
+
+def test_shared_monitoring_observes_computation_then_durable_result_without_private_content(setup_service):
+    records = []
+    def observe(run_id, node, state, **fields):
+        records.append({"node": node, "state": state, **fields})
+    _, client, service = setup_service(observer=observe)
+    response = start(client)
+    assert response.status_code == 202
+    assert wait_for(client, response.json['run_id']).json['status'] == 'completed'
+    service.shutdown()
+    assert records[0]['node'] == 'queue'
+    assert any(row['node'] == 'analysis' and row['state'] == 'running' for row in records)
+    assert records[-2]['node'] == 'guest_store'
+    assert records[-1]['state'] == 'complete'
+    assert 'Private' not in json.dumps(records)
+
+
+def test_shared_monitoring_outage_does_not_break_guest_analysis_or_claim(setup_service):
+    def unavailable(*args, **kwargs):
+        raise ConnectionError('PRIVATE Redis connection')
+    _, client, _ = setup_service(observer=unavailable)
+    response = start(client)
+    ident = response.json['run_id']
+    assert wait_for(client, ident).json['status'] == 'completed'
+    assert claim(client, ident).json['report_text'] == RESULT['report_text']

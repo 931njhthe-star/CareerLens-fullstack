@@ -15,18 +15,15 @@ import {
   renderFlowEntry,
 } from '../features/admin/dashboard-view.js';
 
-// Compatibility fallback for older servers that still return 401; entry itself is public.
+// Every real member can use operations; this is not an administrator gate.
 export function adminAccessDenied() {
-  return `<section class="saved-report-status admin-access-denied" aria-labelledby="admin-access-title">
-    <h1 id="admin-access-title">로그인이 필요합니다</h1>
-    <p role="alert">로그인 세션을 확인할 수 없습니다. 다시 로그인한 뒤 대시보드를 열어 주세요.</p>
-    <a class="button secondary" href="#/email">로그인하러 가기 ${icon('arrow', 16)}</a>
-  </section>`;
+  return renderRestrictedView();
 }
 
-export function adminDashboard() {
+export function adminDashboard(user) {
+  if (typeof user?.id !== 'string' || !user.id.trim() || user.demo === true) return renderRestrictedView();
   return `<div class="admin-dashboard" data-admin-dashboard>
-    <div class="page-heading"><div><p class="admin-dashboard__eyebrow">CAREERLENS / OPERATIONS</p><h1>대시보드</h1><p>실행 기록을 살펴보고, 확인이 필요한 평가를 추적합니다.</p></div><a class="button secondary" href="#/mypage">마이페이지로 돌아가기</a></div>
+    <div class="page-heading"><div><p class="admin-dashboard__eyebrow">CAREERLENS / OPERATIONS</p><h1>대시보드</h1><p>가입한 모든 회원이 실행 기록과 실시간 이용 흐름을 확인할 수 있습니다.</p></div><a class="button secondary" href="#/mypage">마이페이지로 돌아가기</a></div>
     <div class="admin-dashboard__body">
       ${renderFlowEntry(getFlowViewerUrl())}
       <div class="admin-dashboard__toolbar" aria-label="실행 조회 조건">
@@ -47,7 +44,7 @@ export function adminDashboard() {
   </div>`;
 }
 
-/** Public read-only mount. Dispose requests and listeners on navigation. */
+/** Member read-only mount. Dispose requests and listeners on navigation. */
 export function mountAdminDashboard(root, {
   api = requestApi,
   window: windowObject = root?.ownerDocument?.defaultView ?? globalThis.window,
@@ -134,7 +131,7 @@ export function mountAdminDashboard(root, {
       detailError = error?.status === 404 ? 'not_found' : 'unavailable';
       render();
       announcement.textContent = error?.status === 404
-        ? '선택한 실행이 삭제되었거나 더 이상 제공되지 않습니다. 목록을 갱신합니다.'
+        ? '상세 기록을 제공하지 않는 서버이거나 해당 실행이 없습니다. 목록을 갱신합니다.'
         : '상세 기록을 불러오지 못했습니다. 상세에서 다시 시도할 수 있습니다.';
       if (error?.status === 404) {
         void load({ silent: true, refreshSelection: false, missingDetailId: selectedId });
@@ -174,16 +171,11 @@ export function mountAdminDashboard(root, {
       if (selectedIndex >= 0 && refreshSelection) void loadDetail();
     } catch (error) {
       if (disposed || current !== generation || error?.name === 'AbortError') return;
-      if (error?.status === 401) {
-        cleanup();
-        host.innerHTML = adminAccessDenied();
-        return;
-      }
-      if (error?.status === 403) {
+      if (error?.status === 401 || error?.status === 403) {
         data = null;
         selectedIndex = -1;
         content.innerHTML = renderRestrictedView();
-        announcement.textContent = '대시보드는 열렸지만 운영 데이터 조회 권한이 없습니다';
+        announcement.textContent = '로그인 상태를 확인해 주세요. 가입한 모든 회원에게 접근 권한이 있습니다. 다른 로컬 환경에서는 최신 백엔드도 함께 적용해 주세요.';
         return;
       }
       if (silent && data) {

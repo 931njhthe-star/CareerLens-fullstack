@@ -2,6 +2,8 @@
 
 from io import BytesIO
 import json
+import shutil
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -98,6 +100,67 @@ class SafeErrorTests(unittest.TestCase):
         self.assertIn('"progress_percent": 23.5', text)
         self.assertIn('event: done', text)
         self.assertIn('event: error', text)
+
+    def test_worker_milestones_survive_real_proxy_and_browser_flow_contract(self):
+        milestones = [
+            ("parsing", "이력서 문서 구조화 시작", "running"),
+            ("parsing", "이력서 문서 구조화 완료", "running"),
+            ("parsing", "채용공고 구조화 완료", "running"),
+            ("indexing", "이력서 근거 검색 준비 완료", "running"),
+            ("validation", "전체 평가 결과 교차 검토 완료", "completed"),
+            ("validation", "최종 점수 계산 완료", "completed"),
+            ("validation", "최종 Markdown 보고서 저장 완료", "completed"),
+        ] + [("criterion", f"{domain}{number} · 12/12개 항목 검증 및 저장 완료", "completed")
+             for domain in "ABCD" for number in range(1, 4)]
+        events = [{"id": index, "stage": stage, "message": message, "status": status,
+                   "progress_percent": 70, "payload": PRIVATE, "failure_reason": PRIVATE}
+                  for index, (stage, message, status) in enumerate(milestones, 1)]
+        data = {"run": {"id": "fixture-run", "status": "running"}, "events": events}
+        response = self.client(200, json.dumps(data).encode()).get("/api/v1/evaluations/fixture-run/progress")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json["events"]), len(milestones))
+        self.assertNotIn(PRIVATE, response.get_data(as_text=True))
+        # Exercise the exact wire JSON with the production browser sanitizer.
+        node = shutil.which("node")
+        if node is None:
+            self.fail("Node is required for the proxy/browser progress contract test")
+        script = """
+import { sanitizeFlowProgressEvents } from './src/features/activity-flow/backend-progress.js';
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+process.stdout.write(JSON.stringify(sanitizeFlowProgressEvents(JSON.parse(input).events)));
+"""
+        result = subprocess.run([node, "--input-type=module", "-e", script], cwd=server.ROOT,
+                                input=json.dumps(response.json), text=True, encoding="utf-8",
+                                capture_output=True, check=True, timeout=10)
+        mapped = json.loads(result.stdout)
+        self.assertEqual(len(mapped), len(milestones))
+        self.assertEqual([item["node"] for item in mapped[:7]],
+                         ["parse_resume", "parse_resume", "parse_job", "indexing", "validation", "scoring", "database"])
+        self.assertEqual([item["criterion"] for item in mapped[7:]],
+                         [f"{domain}{number}" for domain in "ABCD" for number in range(1, 4)])
+        self.assertNotRegex(result.stdout, r"message|payload|failure_reason|private")
+
+    def test_milestone_allowlist_rejects_private_or_malformed_variants(self):
+        cases = [
+            {"stage": "parsing", "message": "이력서 문서 구조화 시작 " + PRIVATE, "status": "running"},
+            {"stage": "parsing", "message": "이력서 문서 구조화 완료", "status": "failed"},
+            {"stage": "criterion", "message": "A4 · 평가 시작", "status": "running"},
+            {"stage": "criterion", "message": "A1 · 13/12개 항목 검증 및 저장 완료", "status": "completed"},
+            {"stage": "validation", "message": "검토 지적 항목 0개 재평가 시작", "status": "running"},
+            {"stage": "criterion", "message": [PRIVATE], "status": "running"},
+        ]
+        for event in cases:
+            with self.subTest(event=event):
+                self.assertNotIn("message", server.public_evaluation_progress(event))
+
+    def test_sse_keeps_only_known_milestone_without_private_fields(self):
+        event = {"id": 12, "stage": "criterion", "message": "B2 · 평가 시작",
+                 "status": "running", "payload": PRIVATE}
+        body = ("id: 12\nevent: progress\ndata: " + json.dumps(event) + "\n\n").encode()
+        response = self.client(200, body, [("Content-Type", "text/event-stream")]).get("/api/v1/evaluations/fixture-run/events")
+        self.assertIn("B2 · 평가 시작", response.get_data(as_text=True))
+        self.assertNotIn(PRIVATE, response.get_data(as_text=True))
 
     def test_report_success_content_is_not_rewritten_as_an_error(self):
         data = {"report_text": "# Synthetic report\nOriginal report content", "status": "completed"}

@@ -1,0 +1,2 @@
+# Unified diff context lines contain a significant leading space, even when blank.
+member-shared-flow-backend.patch text eol=lf whitespace=-blank-at-eol

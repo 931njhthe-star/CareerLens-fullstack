@@ -1,0 +1,74 @@
+name: careerlens
+x-runtime: &runtime
+  image: careerlens-app:local
+  build:
+    context: ../../..
+    dockerfile: CareerLens-frontend/infra/deploy/Dockerfile
+  env_file: .env.production
+  restart: unless-stopped
+  init: true
+  networks: [services]
+  environment: &environment
+    APP_ENV: production
+    EVALUATION_REPORT_DIR: /var/lib/careerlens/reports
+    EVALUATION_EXECUTION_REPORT_DIR: /var/lib/careerlens/execution-reports
+
+services:
+  frontend:
+    <<: *runtime
+    environment:
+      <<: *environment
+      BACKEND_URL: http://api:5301
+      CAREERLENS_INTERNAL_API_HOST: api
+      CAREERLENS_TRUST_PROXY: "1"
+      CAREERLENS_GUEST_STORE_PATH: /var/lib/careerlens/guest/reports.sqlite3
+    volumes: [guest-data:/var/lib/careerlens/guest]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5300/health', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+  api:
+    <<: *runtime
+    working_dir: /opt/careerlens/CareerLens-backend
+    command: [python, -m, uvicorn, app.main:app, --host, 0.0.0.0, --port, "5301"]
+    volumes:
+      - reports:/var/lib/careerlens/reports
+      - execution-reports:/var/lib/careerlens/execution-reports
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5301/health', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+  worker:
+    <<: *runtime
+    working_dir: /opt/careerlens/CareerLens-backend
+    command: [python, -m, workers.evaluation]
+    volumes:
+      - reports:/var/lib/careerlens/reports
+      - execution-reports:/var/lib/careerlens/execution-reports
+    depends_on:
+      api: {condition: service_healthy}
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env.production
+    ports: ["80:80", "443:443"]
+    networks: [services]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls-data:/data
+      - tls-config:/config
+    depends_on:
+      frontend: {condition: service_healthy}
+
+networks:
+  services:
+volumes:
+  guest-data:
+  reports:
+  execution-reports:
+  tls-data:
+  tls-config:

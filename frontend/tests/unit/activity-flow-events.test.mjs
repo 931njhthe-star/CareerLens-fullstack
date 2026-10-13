@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createFlowStore, classifyFlowRequest, flowSnapshot, observeFlowProgress, mountFlowLauncher,
-  beginFlowEvent, finishFlowEvent, getFlowViewerUrl, FLOW_NODES,
-  FLOW_RUN_NODES, recordFlowEvent, setFlowSession,
+  beginFlowEvent, finishFlowEvent, getFlowViewerUrl, openFlowViewer, FLOW_NODES,
+  FLOW_RUN_NODES, recordFlowEvent, setFlowSession, endFlowObservation,
 } from '../../src/features/activity-flow/events.js';
 import { api } from '../../src/shared/api/client.js';
 import { flowEventLabel } from '../../src/features/activity-flow/catalog.js';
@@ -15,6 +15,7 @@ test('locked result separates waiting for authentication from a successful unloc
   assert.equal(flowEventLabel({ node: 'guest_cleanup', state: 'cleared' }), '비움');
   assert.equal(flowEventLabel({ node: 'queue', state: 'cleared' }), '대기 종료');
 });
+
 
 test('metadata is allowlisted, copied, and bounded without leaking payload fields', () => {
   const store = createFlowStore({ now: () => 123, limit: 3 });
@@ -171,6 +172,35 @@ test('pending eviction immediately replaces observer states for both in-flight a
     assert.equal(store.finish(expired), false);
     assert.equal(store.snapshot().events.some(({ node, state }) => node === 'api_auth' && state !== 'pending'), false);
   }
+});
+
+test('evicting a pending sibling immediately replaces its history even when the newer same-node request is complete', () => {
+  const store = createFlowStore({ inflightLimit: 2 });
+  let observed = [];
+  store.subscribe((change) => {
+    if (change.kind === 'snapshot') observed = store.snapshot().events;
+    else observed = [...observed.filter(({ id }) => id !== change.event.id), change.event];
+  });
+  const older = store.begin('api_jobs', { kind: 'request' });
+  const newer = store.begin('api_jobs', { kind: 'request' });
+  store.finish(newer);
+  store.begin('api_resume', { kind: 'request' });
+  store.begin('api_auth', { kind: 'request' });
+  assert.equal(store.finish(older), false);
+  assert.equal(observed.some(({ id }) => id === older), false);
+  assert.deepEqual(observed, store.snapshot().events);
+  assert.equal(store.snapshot().states.find(({ node }) => node === 'api_jobs').state, 'complete');
+});
+
+test('eviction synchronization does not swallow the new user action used for live source selection', () => {
+  const store = createFlowStore({ limit: 1 });
+  store.begin('api_jobs', { kind: 'request' });
+  const changes = [];
+  store.subscribe((change) => changes.push(change));
+  store.record('role');
+  assert.deepEqual(changes.map(({ kind }) => kind), ['snapshot', 'event']);
+  assert.equal(changes[1].event.node, 'role');
+  assert.equal(changes[1].event.kind, 'action');
 });
 
 test('session state and unavailable progress preserve uncertainty', () => {
@@ -498,7 +528,9 @@ test('source transport uses a stable tab key, disconnects, and reconnects after 
     assert.equal(heartbeat.states.find(({ node }) => node === 'analysis').progress, 52);
     lifecycle.get('pagehide')({});
     assert.equal(channels[0].closed, true);
-    assert.deepEqual(channels[0].sent.at(-1), { kind: 'disconnected', stream });
+    assert.equal(channels[0].sent.at(-1).kind, 'disconnected');
+    assert.equal(channels[0].sent.at(-1).stream, stream);
+    assert.equal(channels[0].sent.at(-1).publisher, channels[0].sent[0].publisher);
     lifecycle.get('pageshow')({ persisted: true });
     assert.equal(channels.length, 2);
     assert.equal(channels[1].sent[0].stream, stream);
@@ -539,6 +571,136 @@ test('unsupported or failed channel returns no live link and denied storage stay
     assert.match(getFlowViewerUrl(), /^\/\?view=flow&stream=[a-zA-Z0-9_-]{8,100}$/);
   } finally {
     dispose?.();
+    for (const [key, value] of Object.entries(originals)) {
+      if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
+    }
+  }
+});
+
+test('only matching pair subscriptions discover a source and background polling is not user activity', () => {
+  const originals = Object.fromEntries(['document', 'window', 'BroadcastChannel', 'sessionStorage'].map((key) => [key, globalThis[key]]));
+  const channels = [];
+  const windowHandlers = new Map(), documentHandlers = new Map();
+  let focused = true;
+  globalThis.document = { hidden: false, visibilityState: 'visible', hasFocus: () => focused,
+    addEventListener: (type, handler) => documentHandlers.set(type, handler), removeEventListener: (type) => documentHandlers.delete(type) };
+  globalThis.window = { addEventListener: (type, handler) => windowHandlers.set(type, handler), removeEventListener: (type) => windowHandlers.delete(type) };
+  globalThis.sessionStorage = { getItem: () => 'duplicated-tab-stream', setItem() {} };
+  globalThis.BroadcastChannel = class {
+    constructor() { this.sent = []; channels.push(this); }
+    addEventListener(_type, handler) { this.message = handler; }
+    postMessage(value) { this.sent.push(value); }
+    close() {}
+  };
+  let dispose;
+  try {
+    dispose = mountFlowLauncher();
+    const first = channels[0];
+    assert.equal(first.sent[0].kind, 'snapshot');
+    assert.equal(first.sent[1].kind, 'active');
+    first.message({ data: { kind: 'subscribe', stream: 'some-other-tab', scope: 'browser' } });
+    assert.equal(first.sent.at(-1).kind, 'active', 'browser-wide subscriptions cannot read another pair');
+    first.message({ data: { kind: 'subscribe', stream: first.sent[0].stream } });
+    assert.equal(first.sent.at(-1).kind, 'snapshot');
+    const request = beginFlowEvent('api_jobs', { kind: 'request' });
+    assert.equal(first.sent.at(-1).active, false);
+    finishFlowEvent(request);
+    assert.equal(first.sent.at(-1).active, false);
+    recordFlowEvent('auth', { kind: 'session' });
+    assert.equal(first.sent.at(-1).active, true);
+    focused = false;
+    recordFlowEvent('report', { kind: 'action' });
+    assert.equal(first.sent.at(-1).active, false, 'background completion cannot select its source');
+    const count = first.sent.length;
+    windowHandlers.get('focus')();
+    assert.equal(first.sent.length, count);
+    focused = true;
+    windowHandlers.get('focus')();
+    assert.equal(first.sent.at(-1).kind, 'active');
+    assert.ok(first.sent.every((value, index) => index === 0 || value.revision > first.sent[index - 1].revision));
+    const publisher = first.sent[0].publisher;
+    assert.match(publisher, /^[a-zA-Z0-9_-]{8,100}$/);
+    dispose();
+    assert.equal(windowHandlers.size, 0); assert.equal(documentHandlers.size, 0);
+    dispose = mountFlowLauncher();
+    assert.equal(channels[1].sent[0].stream, first.sent[0].stream);
+    assert.notEqual(channels[1].sent[0].publisher, publisher, 'copied storage never merges document histories');
+  } finally {
+    dispose?.();
+    for (const [key, value] of Object.entries(originals)) {
+      if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
+    }
+  }
+});
+
+test('ending observation neutralizes unavailable progress without claiming worker failure or clearing a newer run', () => {
+  const first = beginFlowEvent('evaluate');
+  observeFlowProgress({ run: { status: 'queued' } });
+  assert.equal(endFlowObservation(first), true);
+  assert.equal(flowSnapshot().states.some((row) => row.node === 'queue'), false);
+  assert.equal(flowSnapshot().states.some((row) => row.node === 'analysis' && row.state === 'failed'), false);
+  const second = beginFlowEvent('evaluate');
+  observeFlowProgress({ run: { status: 'running', progress_percent: 40 }, flowEvents: [{ id: 1, node: 'parse_resume', state: 'running' }] });
+  assert.equal(endFlowObservation(first, { confirmedCancelled: true }), false);
+  assert.equal(flowSnapshot().states.find((row) => row.node === 'analysis').progress, 40);
+  assert.equal(endFlowObservation(second, { confirmedCancelled: true }), true);
+  assert.equal(flowSnapshot().states.find((row) => row.node === 'analysis').state, 'cancelled');
+  assert.equal(flowSnapshot().states.some((row) => row.node === 'parse_resume'), false);
+  finishFlowEvent(first, { state: 'cancelled' }); finishFlowEvent(second, { state: 'cancelled' });
+});
+
+test('pair observation never instantiates a server publisher or calls fetch in any session mode', () => {
+  const originals = Object.fromEntries(['document', 'window', 'BroadcastChannel', 'sessionStorage'].map((key) => [key, globalThis[key]]));
+  const sent = [];
+  globalThis.document = { hidden: false, hasFocus: () => false, addEventListener() {}, removeEventListener() {} };
+  globalThis.window = { fetch() {}, addEventListener() {}, removeEventListener() {}, setInterval: () => 1, clearInterval() {} };
+  globalThis.BroadcastChannel = class { addEventListener() {} postMessage() {} close() {} };
+  globalThis.sessionStorage = { getItem: () => 'source-demo-test', setItem() {} };
+  let dispose;
+  try {
+    setFlowSession('guest');
+    dispose = mountFlowLauncher({ publisherFactory: () => ({ enqueue: (value) => sent.push(value), flush() {}, dispose() {} }) });
+    setFlowSession('demo');
+    recordFlowEvent('posting', { source: 'demo' });
+    recordFlowEvent('notice');
+    setFlowSession('guest');
+    assert.equal(sent.length, 0, 'no session sends anything to a central collector');
+  } finally {
+    dispose?.();
+    for (const [key, value] of Object.entries(originals)) {
+      if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
+    }
+  }
+});
+
+test('work-tab reload preserves its pair but copied storage in a fresh tab opens an independent observer window', () => {
+  const originals = Object.fromEntries(['document', 'window', 'BroadcastChannel', 'sessionStorage', 'performance'].map((key) => [key, globalThis[key]]));
+  let navigation = 'navigate';
+  const storage = new Map([['careerlens.flow.tab.v1', 'copied-original-stream']]);
+  const opened = [];
+  globalThis.performance = { getEntriesByType: () => [{ type: navigation }] };
+  globalThis.document = { hidden: false, hasFocus: () => false, addEventListener() {}, removeEventListener() {} };
+  globalThis.window = { addEventListener() {}, removeEventListener() {}, open: (...args) => { opened.push(args); return { focus() {} }; } };
+  globalThis.BroadcastChannel = class { addEventListener() {} postMessage() {} close() {} };
+  globalThis.sessionStorage = { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) };
+  let dispose;
+  try {
+    setFlowSession('guest'); dispose = mountFlowLauncher();
+    const firstUrl = getFlowViewerUrl();
+    assert.ok(!firstUrl.includes('copied-original-stream'));
+    assert.equal(openFlowViewer(), null, 'anonymous users cannot open an authenticated observer');
+    setFlowSession('member'); openFlowViewer(); openFlowViewer();
+    assert.equal(opened[0][1], opened[1][1], 'one work tab reuses only its own observer window');
+    assert.match(opened[0][2], /popup=yes/);
+    assert.doesNotMatch(opened[0][0], /token|auth|password/);
+    dispose(); navigation = 'reload'; dispose = mountFlowLauncher();
+    assert.equal(getFlowViewerUrl(), firstUrl);
+    dispose(); navigation = 'navigate'; dispose = mountFlowLauncher();
+    assert.notEqual(getFlowViewerUrl(), firstUrl);
+    openFlowViewer();
+    assert.notEqual(opened.at(-1)[1], opened[0][1]);
+  } finally {
+    dispose?.(); setFlowSession('guest');
     for (const [key, value] of Object.entries(originals)) {
       if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
     }

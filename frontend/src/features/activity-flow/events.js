@@ -50,12 +50,14 @@ export function createFlowStore({ now = Date.now, limit = 100, inflightLimit = 2
   }
   function remove(id) {
     const pending = events.find((event) => event.id === id);
-    const removedState = pending?.state === 'pending' && latest.get(pending.node)?.id === id;
-    if (removedState) latest.delete(pending.node);
+    const removedPending = pending?.state === 'pending';
+    if (removedPending && latest.get(pending.node)?.id === id) latest.delete(pending.node);
     inflight.delete(id);
     const index = events.findIndex((event) => event.id === id);
     if (index !== -1) events.splice(index, 1);
-    return removedState;
+    // An older request also contributes to the card's pending count. Observers
+    // need its removal even when a newer request owns the latest state.
+    return removedPending;
   }
   function resetRun() {
     for (const id of FLOW_RUN_NODES) latest.delete(id);
@@ -64,10 +66,10 @@ export function createFlowStore({ now = Date.now, limit = 100, inflightLimit = 2
       if (previous && FLOW_RUN_NODES.includes(previous.node)) remove(id);
     }
   }
-  function clearActiveProgress() {
+  function clearActiveProgress({ includeAnalysis = false } = {}) {
     let changed = false;
     for (const [node, event] of latest) {
-      if (node === 'analysis' || !(BACKEND_FLOW_NODES.includes(node) || GUEST_FLOW_NODES.includes(node))
+      if ((!includeAnalysis && node === 'analysis') || !(BACKEND_FLOW_NODES.includes(node) || GUEST_FLOW_NODES.includes(node))
         || event.kind !== 'progress' || !['pending', 'running'].includes(event.state)) continue;
       // A terminal run cannot still be executing a step. Its last observation
       // remains in history; an absent step result must not become a fake success
@@ -92,14 +94,16 @@ export function createFlowStore({ now = Date.now, limit = 100, inflightLimit = 2
     if (typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0 && durationMs <= 86400000) event.durationMs = durationMs;
     if (['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) event.method = method;
     if (typeof criterion === 'string' && /^domain_[a-d]$/.test(node) && new RegExp(`^${node.at(-1).toUpperCase()}[1-3]$`).test(criterion)) event.criterion = criterion;
-    events.push(event);
-    latest.set(node, event);
     let removedState = false;
-    while (events.length > maximum) removedState = remove(events[0].id) || removedState;
+    while (events.length >= maximum) removedState = remove(events[0].id) || removedState;
     // Eviction can remove a pending card as well as a log row. Send its complete
     // replacement immediately, rather than leaving observers pending until the
-    // next heartbeat. No fabricated success or cancellation is recorded.
-    emit(removedState ? { kind: 'snapshot' } : { kind: 'event', event });
+    // next heartbeat. Send this before the new event so its user-action/focus
+    // signal and single live pulse are not swallowed by synchronization.
+    if (removedState) emit({ kind: 'snapshot' });
+    events.push(event);
+    latest.set(node, event);
+    emit({ kind: 'event', event });
     return event.id;
   }
   function begin(node, options = {}) {
@@ -165,14 +169,27 @@ export function classifyFlowRequest(path) {
 }
 
 const store = createFlowStore();
+let currentAnalysisObservation = null;
 export function beginFlowEvent(node, options) {
   if (node === 'analysis' || node === 'evaluate') { previousProgress = ''; previousBackendEvent = 0; backendStates.clear(); }
-  return store.begin(node, options);
+  const id = store.begin(node, options);
+  if (node === 'analysis' || node === 'evaluate') currentAnalysisObservation = id;
+  return id;
+}
+/** Ending observation is not proof that a disconnected worker failed. The
+ * observation id prevents a late cancellation response from clearing a new run.
+ */
+export function endFlowObservation(observation, { confirmedCancelled = false } = {}) {
+  if (!observation || observation !== currentAnalysisObservation) return false;
+  const active = store.snapshot().states.find((event) => ['analysis', 'queue'].includes(event.node) && ['pending', 'running'].includes(event.state));
+  store.clearActiveProgress({ includeAnalysis: true });
+  if (confirmedCancelled && active) store.record('analysis', { state: 'cancelled', kind: 'progress', source: 'backend', execution: active.execution });
+  return true;
 }
 export const finishFlowEvent = (...args) => store.finish(...args);
 export const recordFlowEvent = (...args) => store.record(...args);
 export function setFlowSession(mode, options) {
-  if (options?.resetRun) { previousProgress = ''; previousBackendEvent = 0; backendStates.clear(); }
+  if (options?.resetRun) { previousProgress = ''; previousBackendEvent = 0; backendStates.clear(); currentAnalysisObservation = null; }
   store.setSession(mode, options);
 }
 export const flowSnapshot = () => store.snapshot();
@@ -232,31 +249,57 @@ function randomStream() {
 
 let launcherDisposer;
 let sourceStream;
+let sourcePublisher;
+export const getFlowPublisherId = () => sourcePublisher || null;
 const STREAM_KEY = 'careerlens.flow.tab.v1';
 function tabStream() {
   try {
     const saved = sessionStorage.getItem(STREAM_KEY);
-    if (/^[a-zA-Z0-9_-]{8,100}$/.test(saved || '')) return saved;
+    const navigation = globalThis.performance?.getEntriesByType?.('navigation')?.[0]?.type;
+    // Reload keeps this work-tab pair; a freshly opened/duplicated tab must not
+    // inherit the original tab's sessionStorage pairing identity.
+    if (navigation !== 'navigate' && /^[a-zA-Z0-9_-]{8,100}$/.test(saved || '')) return saved;
     const created = randomStream();
     if (created) sessionStorage.setItem(STREAM_KEY, created);
     return created;
   } catch { return randomStream(); }
 }
 
-/** Opens observation for this application tab; no credentials or resource IDs in the URL. */
+/** Opens only this work tab's observer. Authentication stays in sessionStorage. */
 export function getFlowViewerUrl() {
   return sourceStream ? `/?view=flow&stream=${encodeURIComponent(sourceStream)}` : null;
 }
 
 /** Same-origin metadata channel. Only a random tab key survives a reload, never event data. */
+export function openFlowViewer() {
+  const url = getFlowViewerUrl();
+  if (!url || store.snapshot().session.mode !== 'member') return null;
+  // An ordinary same-origin new window copies this tab's sessionStorage. No
+  // credentials are sent in URLs or flow messages; the observer severs opener.
+  const child = window.open(url, `careerlens-flow-${sourceStream}`, 'popup=yes,width=1440,height=960');
+  child?.focus?.();
+  return child;
+}
+
 export function mountFlowLauncher() {
   if (launcherDisposer) return launcherDisposer;
   if (typeof document === 'undefined' || typeof window === 'undefined') return () => {};
   const stream = tabStream();
-  if (!stream || typeof BroadcastChannel === 'undefined') return () => {};
+  if (!stream) return () => {};
+  // Duplicating a tab copies sessionStorage. A document-specific publisher key
+  // keeps those tabs' event-1 IDs and analysis states separate nonetheless.
+  const publisher = randomStream();
+  sourcePublisher = publisher;
+  let revision = 0;
   let channel;
   function send(message) {
-    try { channel?.postMessage(message); } catch { /* A closed observer is harmless. */ }
+    const envelope = { ...message, ...(publisher ? { publisher } : {}), revision: ++revision };
+    try { channel?.postMessage(envelope); }
+    catch { /* A closed observer is harmless. */ }
+  }
+  const foreground = () => !document.hidden && document.visibilityState !== 'hidden' && document.hasFocus?.() === true;
+  function announceActivity() {
+    if (foreground()) send({ kind: 'active', stream, at: Date.now() });
   }
   const snapshot = () => send({ kind: 'snapshot', stream, ...store.snapshot() });
   function connect() {
@@ -266,26 +309,39 @@ export function mountFlowLauncher() {
       channel.addEventListener('message', ({ data }) => {
         if (data?.kind === 'subscribe' && data.stream === stream) snapshot();
       });
-      snapshot();
     } catch { channel = undefined; }
+    snapshot();
+    announceActivity();
   }
   function disconnect() {
     send({ kind: 'disconnected', stream });
     channel?.close(); channel = undefined;
   }
   const unsubscribe = store.subscribe((change) => {
-    if (change.kind === 'event') send({ kind: 'event', stream, event: change.event });
+    if (change.kind === 'event') send({ kind: 'event', stream, event: change.event,
+      active: foreground() && ['action', 'navigation', 'session'].includes(change.event.kind) });
     else snapshot();
   });
   function resume(event) { if (event.persisted) connect(); }
   window.addEventListener('pagehide', disconnect);
   window.addEventListener('pageshow', resume);
+  window.addEventListener('focus', announceActivity);
+  document.addEventListener?.('visibilitychange', announceActivity);
+  const launch = (event) => {
+    if (!event.target?.closest?.('[data-flow-open], [data-admin-flow]')) return;
+    event.preventDefault();
+    if (!openFlowViewer()) window.alert?.('로그인 상태와 팝업 허용 설정을 확인해 주세요.');
+  };
+  document.addEventListener?.('click', launch);
   connect();
   sourceStream = channel ? stream : null;
   launcherDisposer = () => {
-    disconnect(); unsubscribe(); sourceStream = null;
+    disconnect(); unsubscribe(); sourceStream = null; sourcePublisher = null;
     window.removeEventListener('pagehide', disconnect);
     window.removeEventListener('pageshow', resume);
+    window.removeEventListener('focus', announceActivity);
+    document.removeEventListener?.('visibilitychange', announceActivity);
+    document.removeEventListener?.('click', launch);
     launcherDisposer = undefined;
   };
   return launcherDisposer;

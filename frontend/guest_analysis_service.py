@@ -99,10 +99,11 @@ class GuestError(Exception):
 
 class GuestAnalysisService:
     def __init__(self, store_path, fetch_job, verify_user, runner, available, *,
-                 ttl_seconds=1800, timeout_seconds=900, max_active=2, max_queued=4):
+                 ttl_seconds=1800, timeout_seconds=900, max_active=2, max_queued=4, observer=None):
         self.path = Path(store_path)
         self.fetch_job, self.verify_user = fetch_job, verify_user
         self.runner, self.available = runner, available
+        self.observer = observer
         self.ttl, self.timeout = ttl_seconds, timeout_seconds
         self.max_active = max_active
         self._clock = time.time
@@ -112,6 +113,14 @@ class GuestAnalysisService:
         self._capacity = threading.BoundedSemaphore(max_active + max_queued)
         self._stop = threading.Event()
         self._janitor = None
+
+    def observe(self, run_id, node, state, **fields):
+        # Only structural measurements leave this service, never input/result data.
+        try:
+            if self.observer:
+                self.observer(run_id, node, state, **fields)
+        except Exception:
+            pass  # Monitoring must not turn a successful analysis into a failure.
 
     @contextmanager
     def connect(self):
@@ -312,6 +321,7 @@ class GuestAnalysisService:
                         VALUES (?,?,?,?,?,'queued','queued',?,?,?,?)""",
                         (run_id, key, idem, fingerprint, ip_key, now, expires, str(summary["id"]), json.dumps(summary, ensure_ascii=False)))
                     row = db.execute("SELECT * FROM guest_analyses WHERE id=?", (run_id,)).fetchone()
+                self.observe(run_id, "queue", "pending", publisher=request.headers.get("X-CareerLens-Flow-Publisher"))
                 self.start_workers()
                 self._executor.submit(self.work, run_id, resume, job)
                 return row, token
@@ -344,24 +354,39 @@ class GuestAnalysisService:
                 return
             with self.connect() as db:
                 row = db.execute("SELECT flow_events FROM guest_analyses WHERE id=?", (run_id,)).fetchone()
+                updated = None
                 if row:
                     # guest_store is reserved for the successful durable write;
                     # even a runner callback cannot claim that persistence ran.
                     event = flow_event if isinstance(flow_event, dict) and flow_event.get("node") != "guest_store" else None
-                    db.execute("UPDATE guest_analyses SET stage=?,progress=MAX(progress,?),flow_events=? WHERE id=? AND status='running' AND expires>?",
+                    updated = db.execute("UPDATE guest_analyses SET stage=?,progress=MAX(progress,?),flow_events=? WHERE id=? AND status='running' AND expires>?",
                                (safe_stage, min(percent, 99), append_flow_event(row["flow_events"], event), run_id, self._clock()))
+            if not updated or not updated.rowcount:
+                raise asyncio.CancelledError()
+            await asyncio.to_thread(self.observe, run_id, "analysis", "running", progress=min(percent, 99))
+            safe_event = safe_flow_event(event) if row else None
+            if safe_event:
+                await asyncio.to_thread(self.observe, run_id, safe_event["node"], safe_event["state"],
+                                        criterion=safe_event.get("criterion"))
 
         async def run():
             return await asyncio.wait_for(self.runner(resume, job, run_id, progress, cancelled), timeout=self.timeout)
 
         try:
             if cancelled():
+                self.observe(run_id, "analysis", "cancelled")
                 return
             with self.connect() as db:
-                db.execute("UPDATE guest_analyses SET status='running',stage='parsing' WHERE id=? AND status='queued' AND expires>?", (run_id, self._clock()))
+                admitted = db.execute("UPDATE guest_analyses SET status='running',stage='parsing' WHERE id=? AND status='queued' AND expires>?", (run_id, self._clock()))
+            if not admitted.rowcount:
+                self.observe(run_id, "analysis", "cancelled")
+                return
             started = time.monotonic()
+            self.observe(run_id, "queue", "complete")
+            self.observe(run_id, "analysis", "running", progress=0)
             result = asyncio.run(run())
             if cancelled():
+                self.observe(run_id, "analysis", "cancelled")
                 return
             if not isinstance(result, dict) or result.get("status") not in FINAL or not isinstance(result.get("report_text"), str) or not result["report_text"].strip() or not isinstance(result.get("scores"), dict):
                 raise ValueError("Invalid analysis result")
@@ -375,12 +400,18 @@ class GuestAnalysisService:
                     # Readers see this event only after the result transaction
                     # commits. Engine completion/100% alone never creates it.
                     events = append_flow_event(row["flow_events"], {"node": "guest_store", "state": "complete"})
-                    db.execute("UPDATE guest_analyses SET status=?,stage='completed',progress=100,result=?,completed=?,flow_events=?,analysis_duration_ms=? WHERE id=? AND status='running' AND expires>?",
+                    saved = db.execute("UPDATE guest_analyses SET status=?,stage='completed',progress=100,result=?,completed=?,flow_events=?,analysis_duration_ms=? WHERE id=? AND status='running' AND expires>?",
                                (result["status"], json.dumps(safe, ensure_ascii=False, allow_nan=False), self._clock(), events,
                                 max(0, (time.monotonic() - started) * 1000), run_id, self._clock()))
+                else:
+                    saved = None
+            if saved and saved.rowcount:
+                self.observe(run_id, "guest_store", "complete")
+                self.observe(run_id, "analysis", "partial" if result["status"] == "partial" else "complete", progress=100)
         except (Exception, asyncio.CancelledError):
             with self.connect() as db:
-                db.execute("UPDATE guest_analyses SET status='failed',stage='failed',result=NULL,completed=? WHERE id=? AND status IN ('queued','running')", (self._clock(), run_id))
+                failed = db.execute("UPDATE guest_analyses SET status='failed',stage='failed',result=NULL,completed=? WHERE id=? AND status IN ('queued','running')", (self._clock(), run_id))
+            self.observe(run_id, "analysis", "failed" if failed.rowcount else "cancelled")
         finally:
             self._capacity.release()
             self.cleanup()
@@ -388,10 +419,7 @@ class GuestAnalysisService:
 
 def create_guest_blueprint(store_path, fetch_job, verify_user, runner=None, available=None, **options):
     if runner is None or available is None:
-        if __package__:
-            from .guest_analysis_engine import engine_available, run_analysis
-        else:
-            from guest_analysis_engine import engine_available, run_analysis
+        from guest_analysis_engine import engine_available, run_analysis
         runner = runner or run_analysis
         available = available or engine_available
     service = GuestAnalysisService(store_path, fetch_job, verify_user, runner, available, **options)
@@ -463,9 +491,13 @@ def create_guest_blueprint(store_path, fetch_job, verify_user, runner=None, avai
             raise GuestError(400, "invalid_request")
         _, guest_hash = service.session()
         with service._lock, service.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            runs = db.execute("SELECT id FROM guest_analyses WHERE guest_hash=? AND idempotency_key=? AND owner_user IS NULL", (guest_hash, key)).fetchall()
             db.execute("INSERT OR REPLACE INTO guest_cancelled_requests VALUES (?,?,?)", (guest_hash, key, service._clock() + service.ttl))
             db.execute("UPDATE guest_analyses SET status='cancelled',stage='cancelled',result=NULL,completed=? WHERE guest_hash=? AND idempotency_key=? AND owner_user IS NULL",
                        (service._clock(), guest_hash, key))
+        for run in runs:
+            service.observe(run["id"], "analysis", "cancelled")
         return jsonify({"cancelled": True})
 
     @blueprint.post("/analyses/<run_id>/cancel")
@@ -474,8 +506,11 @@ def create_guest_blueprint(store_path, fetch_job, verify_user, runner=None, avai
         if row["owner_user"]:
             raise GuestError(409, "conflict")
         with service.connect() as db:
-            db.execute("UPDATE guest_analyses SET status='cancelled',stage='cancelled',result=NULL,completed=? WHERE id=? AND owner_user IS NULL", (service._clock(), run_id))
+            changed = db.execute("UPDATE guest_analyses SET status='cancelled',stage='cancelled',result=NULL,completed=? WHERE id=? AND owner_user IS NULL", (service._clock(), run_id))
+            if not changed.rowcount:
+                raise GuestError(409, "conflict")
             row = db.execute("SELECT * FROM guest_analyses WHERE id=?", (run_id,)).fetchone()
+        service.observe(run_id, "analysis", "cancelled")
         return jsonify(service.metadata(row))
 
     @blueprint.delete("/analyses/<run_id>")
@@ -484,7 +519,10 @@ def create_guest_blueprint(store_path, fetch_job, verify_user, runner=None, avai
         if row["owner_user"]:
             raise GuestError(409, "conflict")
         with service.connect() as db:
-            db.execute("DELETE FROM guest_analyses WHERE id=? AND owner_user IS NULL", (run_id,))
+            changed = db.execute("DELETE FROM guest_analyses WHERE id=? AND owner_user IS NULL", (run_id,))
+            if not changed.rowcount:
+                raise GuestError(409, "conflict")
+        service.observe(run_id, "analysis", "cancelled")
         return "", 204
 
     @blueprint.post("/analyses/<run_id>/claim")

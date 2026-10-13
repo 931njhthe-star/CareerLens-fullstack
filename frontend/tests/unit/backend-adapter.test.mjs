@@ -4,6 +4,8 @@ import {
   acceptBackendAuthCallback,
   backendApi,
   enableBackendAdapter,
+  captureBackendSession,
+  storeBackendCredentials,
 } from '../../src/shared/api/backend-adapter.js';
 
 function createStorage() {
@@ -24,6 +26,67 @@ enableBackendAdapter();
 
 beforeEach(() => {
   globalThis.sessionStorage = createStorage();
+});
+
+for (const profileOutcome of ['member', 'unauthorized', 'guest']) {
+  test(`a delayed ${profileOutcome} session capability response cannot replace a newer login`, async () => {
+    if (profileOutcome !== 'guest') sessionStorage.setItem('careerlens.backend.access-token', 'old-owner');
+    let release;
+    const capabilities = new Promise((resolve) => { release = resolve; });
+    const pending = backendApi('/auth/session', {}, async (path) => {
+      if (path === '/local-guest/capabilities') return capabilities;
+      if (profileOutcome === 'unauthorized') throw new ApiError('expired', 401);
+      return { user_id: 'old-owner' };
+    }, ApiError);
+    await new Promise((resolve) => setImmediate(resolve));
+    storeBackendCredentials({ access_token: 'new-owner', refresh_token: 'new-refresh' });
+    release({ available: true, storage_origin: 'frontend_guest' });
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(sessionStorage.getItem('careerlens.backend.access-token'), 'new-owner');
+    assert.equal(sessionStorage.getItem('careerlens.backend.refresh-token'), 'new-refresh');
+  });
+}
+
+for (const path of ['/auth/login', '/auth/register', '/auth/callback']) {
+  test(`a delayed ${path} response never overwrites a newer login`, async () => {
+    let release;
+    const transport = () => new Promise((resolve) => { release = resolve; });
+    const pending = path === '/auth/callback'
+      ? acceptBackendAuthCallback({ accessToken: 'old-candidate', refreshToken: 'old-refresh' }, transport, ApiError)
+      : backendApi(path, { method: 'POST', body: { email: 'fixture@example.test', password: 'fixture' } }, transport, ApiError);
+    storeBackendCredentials({ access_token: 'new-owner', refresh_token: 'new-refresh' });
+    release(path === '/auth/callback' ? { user_id: 'old-owner' } : { access_token: 'old-owner', refresh_token: 'old-refresh' });
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(sessionStorage.getItem('careerlens.backend.access-token'), 'new-owner');
+  });
+  test(`a delayed ${path} failure is cancellation rather than a newer account authentication error`, async () => {
+    let reject;
+    const transport = () => new Promise((_resolve, fail) => { reject = fail; });
+    const pending = path === '/auth/callback'
+      ? acceptBackendAuthCallback({ accessToken: 'old-candidate', refreshToken: 'old-refresh' }, transport, ApiError)
+      : backendApi(path, { method: 'POST', body: { email: 'fixture@example.test', password: 'fixture' } }, transport, ApiError);
+    storeBackendCredentials({ access_token: 'new-owner' });
+    reject(new ApiError('old request rejected', 401));
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(sessionStorage.getItem('careerlens.backend.access-token'), 'new-owner');
+  });
+}
+
+test('member file conversion cannot upload the old account resume to a replacement account', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'old-owner');
+  let release;
+  const form = new FormData(); form.set('file', new Blob(['synthetic resume']), 'fixture.md');
+  const requests = [];
+  const pending = backendApi('/resume/upload', { method: 'POST', body: form }, async (path) => {
+    requests.push(path);
+    if (path === '/local-data/convert-resume') return new Promise((resolve) => { release = resolve; });
+    assert.fail('The replacement account must receive no resume write');
+  }, ApiError);
+  storeBackendCredentials({ access_token: 'new-owner' });
+  release({ text: 'old account resume' });
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.deepEqual(requests, ['/local-data/convert-resume']);
+  assert.equal(sessionStorage.getItem('careerlens.backend.workspace:new-owner'), null);
 });
 
 test('saved report pages filter completed evaluations while paging over the original run count', async () => {
@@ -929,7 +992,7 @@ function terminalAnalysisFixture(progressPage, { status = 'partial' } = {}) {
     assert.fail(`Unexpected fixture request: ${path}`);
   };
   return {
-    calls, updates,
+    calls, updates, request,
     run: () => backendApi('/analysis', { method: 'POST', onProgress: (update) => updates.push(update) }, request, ApiError),
   };
 }
@@ -2230,27 +2293,32 @@ test('callback validates only its profile without probing dashboard access', asy
 });
 
 for (const mode of ['anonymous', 'member', 'demo']) {
-  test(`public dashboard reads real data without account credentials in ${mode} mode`, async () => {
+  test(`dashboard requires a real member session without an administrator check in ${mode} mode`, async () => {
     if (mode === 'member')
       sessionStorage.setItem('careerlens.backend.access-token', 'fixture-token');
     if (mode === 'demo') sessionStorage.setItem('careerlens.backend.demo-session', 'true');
     const controller = new AbortController();
     const payload = { summary: {}, runs: [], stages: [] };
     let calls = 0;
-    const result = await backendApi(
+    const pending = backendApi(
       '/admin/evaluation-performance?days=7&run_limit=100',
       { signal: controller.signal },
       async (path, options) => {
         calls++;
         assert.equal(path, '/admin/evaluation-performance?days=7&run_limit=100');
         assert.equal(options.signal, controller.signal);
-        assert.equal(options.auth, false);
+        assert.notEqual(options.auth, false);
         return payload;
       },
       ApiError,
     );
-    assert.equal(result, payload);
-    assert.equal(calls, 1);
+    if (mode === 'member') {
+      assert.equal(await pending, payload);
+      assert.equal(calls, 1);
+    } else {
+      await assert.rejects(pending, { status: 401 });
+      assert.equal(calls, 0);
+    }
   });
 }
 
@@ -2278,4 +2346,108 @@ test('report summaries round display while preserving original backend scores', 
   assert.match(result.draft.report.summary, /종합점수는 81점/);
   assert.equal(result.draft.report.score_components.resume_completeness.score, 67.5678);
   assert.equal(result.draft.report.score_components.qualifications.score, 0);
+});
+
+test('uncertain member creation retries the same idempotent intent and a finished analysis releases it', async () => {
+  const fixture = terminalAnalysisFixture(() => []);
+  const keys = [];
+  let loseResponse = true;
+  const request = async (path, options = {}) => {
+    if (path === '/evaluations' && options.method === 'POST') {
+      keys.push(options.idempotencyKey);
+      assert.match(options.idempotencyKey, /^[\da-f-]{36}$/i);
+      if (loseResponse) { loseResponse = false; throw new ApiError('Lost response', 0); }
+    }
+    return fixture.request(path, options);
+  };
+  const analyze = () => backendApi('/analysis', { method: 'POST' }, request, ApiError);
+  await assert.rejects(analyze(), { status: 0 });
+  const pending = JSON.parse(sessionStorage.getItem('careerlens.backend.workspace:flow-member')).pending_evaluation;
+  assert.equal(pending.idempotency_key, keys[0]);
+  assert.equal((await analyze()).report.status, 'partial');
+  assert.equal(keys[0], keys[1]);
+  assert.equal(JSON.parse(sessionStorage.getItem('careerlens.backend.workspace:flow-member')).pending_evaluation, null);
+  await analyze();
+  assert.notEqual(keys[1], keys[2]);
+});
+
+test('a changed member analysis input and a different account never reuse an uncertain attempt', async () => {
+  const fixture = terminalAnalysisFixture(() => []);
+  const keys = [];
+  const request = async (path, options = {}) => {
+    if (path === '/evaluations') { keys.push(options.idempotencyKey); throw new ApiError('Lost response', 0); }
+    if (path === '/jobs/other-job') return { id: 'other-job', title: 'Other job', description: 'Synthetic' };
+    return fixture.request(path, options);
+  };
+  const analyze = () => backendApi('/analysis', { method: 'POST' }, request, ApiError);
+  await assert.rejects(analyze(), { status: 0 });
+  const stateKey = 'careerlens.backend.workspace:flow-member';
+  sessionStorage.setItem(stateKey, JSON.stringify({ ...JSON.parse(sessionStorage.getItem(stateKey)),
+    selected_posting_id: 'other-job', selected_posting: { id: 'other-job', source_type: 'backend' } }));
+  await assert.rejects(analyze(), { status: 0 });
+  assert.notEqual(keys[0], keys[1]);
+  sessionStorage.setItem('careerlens.backend.access-token', 'another-account');
+  sessionStorage.setItem('careerlens.backend.workspace:another-member', JSON.stringify({
+    resume_id: 'flow-resume', selected_posting_id: 'flow-job', selected_posting: { id: 'flow-job', source_type: 'backend' }, suppress_latest_report: true,
+  }));
+  await assert.rejects(backendApi('/analysis', { method: 'POST' },
+    (path, options) => path === '/me' ? { user_id: 'another-member' } : request(path, options), ApiError), { status: 0 });
+  assert.notEqual(keys[1], keys[2]);
+  assert.notEqual(keys[0], keys[2]);
+});
+
+test('concurrent same-intent member submissions share the pending key despite a slower workspace read', async () => {
+  const fixture = terminalAnalysisFixture(() => []);
+  let jobs = 0;
+  let releaseSlowWorkspace;
+  const slowWorkspace = new Promise((resolve) => { releaseSlowWorkspace = resolve; });
+  let releaseCreates;
+  const creates = new Promise((resolve) => { releaseCreates = resolve; });
+  const keys = [];
+  const request = async (path, options = {}) => {
+    if (path === '/jobs/flow-job' && ++jobs === 2) await slowWorkspace;
+    if (path === '/evaluations') {
+      keys.push(options.idempotencyKey);
+      releaseSlowWorkspace();
+      if (keys.length === 2) releaseCreates();
+      await creates;
+    }
+    return fixture.request(path, options);
+  };
+  await Promise.all([1, 2].map(() => backendApi('/analysis', { method: 'POST' }, request, ApiError)));
+  assert.equal(keys.length, 2);
+  assert.equal(keys[0], keys[1]);
+});
+
+test('a server-confirmed failed member run releases its creation key for a deliberate retry', async () => {
+  const fixture = terminalAnalysisFixture(() => [], { status: 'failed' });
+  const keys = [];
+  const request = (path, options = {}) => {
+    if (path === '/evaluations') keys.push(options.idempotencyKey);
+    return fixture.request(path, options);
+  };
+  for (let attempt = 0; attempt < 2; attempt++)
+    await assert.rejects(backendApi('/analysis', { method: 'POST' }, request, ApiError), { code: 'evaluation_failed' });
+  assert.equal(keys.length, 2);
+  assert.notEqual(keys[0], keys[1]);
+});
+
+test('member analysis tolerates verified refresh but rejects a switched owner during report loading', async () => {
+  for (const change of ['refresh', 'switch']) {
+    const fixture = terminalAnalysisFixture(() => []);
+    const request = async (path, options) => {
+      const result = await fixture.request(path, options);
+      if (path === '/reports/flow-report') {
+        if (change === 'refresh') storeBackendCredentials({ access_token: 'refreshed-same-member' }, captureBackendSession());
+        else sessionStorage.setItem('careerlens.backend.access-token', 'different-member');
+      }
+      return result;
+    };
+    const pending = backendApi('/analysis', { method: 'POST' }, request, ApiError);
+    if (change === 'refresh') assert.equal((await pending).report.status, 'partial');
+    else {
+      await assert.rejects(pending, { name: 'AbortError' });
+      assert.equal(JSON.parse(sessionStorage.getItem('careerlens.backend.workspace:flow-member')).report, undefined);
+    }
+  }
 });

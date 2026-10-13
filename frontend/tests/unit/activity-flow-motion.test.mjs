@@ -171,3 +171,16 @@ test('a hidden active card and a zero-sized map do not keep scheduling frames', 
   assert.equal(s.frames.size, 1);
   s.motion.destroy();
 });
+
+
+test('reduced motion completion does not leave a permanent coloured canvas outline', () => {
+  const s = setup({ reducedMotion: true });
+  s.motion.syncActive([]);
+  const strokes = s.strokes;
+  s.motion.pulse('analysis', 'complete');
+  assert.equal(s.strokes, strokes, 'finite DOM activity supplies feedback, not a retained canvas highlight');
+  assert.equal(s.frames.size, 0);
+  s.motion.syncActive([]);
+  assert.equal(s.strokes, strokes);
+  s.motion.destroy();
+});

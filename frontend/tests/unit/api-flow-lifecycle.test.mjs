@@ -26,6 +26,7 @@ async function withFetch(mock, check) {
 }
 
 test('an actual API request is pending until its body is read, then finishes the same observation', async () => {
+  sessionStorage.setItem('careerlens.backend.access-token', 'ordinary-member');
   let releaseBody;
   const body = new Promise((resolve) => { releaseBody = resolve; });
   const observed = observations();
@@ -43,6 +44,17 @@ test('an actual API request is pending until its body is read, then finishes the
     assert.ok(complete.durationMs >= 0);
     assert.deepEqual(observed().map(({ node }) => node), ['api_dashboard']);
   });
+});
+
+test('central telemetry transport does not recursively record its own requests', async () => {
+  const observed = observations();
+  await withFetch(async () => Response.json({ items: [] }), async () => {
+    await api('/flow/events', { method: 'POST', body: { batch: [] } });
+    sessionStorage.setItem('careerlens.backend.access-token', 'ordinary-member');
+    await api('/flow/sources?limit=100');
+    await api('/flow/events?cursor=0&limit=200');
+  });
+  assert.deepEqual(observed(), []);
 });
 
 for (const [label, transport, expected] of [

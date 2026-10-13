@@ -174,7 +174,7 @@ test('missing job context has explicit loading, missing and retry states without
   assert.match(failed, /href="#\/reports\/evaluation-1234567890"/);
 });
 
-test('report selection works while deletion stays disabled until its capability is available', () => {
+test('unsupported report selection and deletion remain disabled', () => {
   const markup = savedReportsList({
     items: [savedReport],
     selectedIds: [savedReport.id],
@@ -188,15 +188,15 @@ test('report selection works while deletion stays disabled until its capability 
   )[0];
   const bulkDelete = markup.match(/<button\b[^>]*data-reports-delete-selected[^>]*>/)[0];
   assert.match(rowSelection, /checked/);
-  assert.doesNotMatch(rowSelection, /disabled/);
+  assert.match(rowSelection, /disabled/);
   assert.match(rowDelete, /disabled/);
   assert.match(bulkDelete, /disabled/);
-  assert.match(markup, /삭제는 백엔드 연동 준비 중/);
+  assert.match(markup, /현재 저장 서버에서 삭제를 지원하지 않습니다/);
 });
 
 test('delete controls require both capability and a selection for bulk actions', () => {
   const ready = savedReportsList({
-    items: [savedReport],
+    items: [{ ...savedReport, can_delete: true }],
     selectedIds: [savedReport.id],
     loaded: true,
     canDeleteReports: true,
@@ -211,13 +211,13 @@ test('delete controls require both capability and a selection for bulk actions',
   );
   assert.doesNotMatch(ready, /reports-delete-help|연동 준비 중/);
   const unselected = savedReportsList({
-    items: [savedReport],
+    items: [{ ...savedReport, can_delete: true }],
     loaded: true,
     canDeleteReports: true,
   });
   assert.match(unselected.match(/<button\b[^>]*data-reports-delete-selected[^>]*>/)[0], /disabled/);
   const deleting = savedReportsList({
-    items: [savedReport],
+    items: [{ ...savedReport, can_delete: true }],
     selectedIds: [savedReport.id],
     loaded: true,
     canDeleteReports: true,
@@ -260,7 +260,7 @@ test('search and status filter only supplied rows without mutating them', () => 
 });
 
 test('select-all reflects the filtered visible rows and reports hidden selections', () => {
-  const items = [savedReport, { ...savedReport, id: 'partial-report', status: 'partial' }];
+  const items = [{ ...savedReport, can_delete: true }, { ...savedReport, id: 'partial-report', status: 'partial', can_delete: true }];
   const markup = savedReportsList({
     items,
     selectedIds: [savedReport.id, 'partial-report'],
@@ -270,7 +270,7 @@ test('select-all reflects the filtered visible rows and reports hidden selection
   const selectAll = markup.match(/<input\b[^>]*data-reports-select-all[^>]*>/)[0];
   assert.match(selectAll, /aria-checked="true"/);
   assert.match(selectAll, /\schecked\s/);
-  assert.match(markup, /현재 목록 전체 선택/);
+  assert.match(markup, /현재 목록의 삭제 가능한 보고서 전체 선택/);
   assert.match(markup, /현재 목록 밖 1개 포함/);
   assert.doesNotMatch(markup, /data-report-select="evaluation-1234567890"/);
   assert.match(markup, /data-report-select="partial-report"/);

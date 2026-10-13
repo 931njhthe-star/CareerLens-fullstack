@@ -362,18 +362,18 @@ export const DEMO_ACTIONS = [
   define('report_fetch_failed', 'reports', '분석 완료 후 보고서 조회 실패', 'failure', '분석과 결과 저장은 끝났지만 최종 보고서 요청이 실패하는 예시입니다.',
     '분석 100%·저장 완료 → 보고서 조회 실패', '가상 분석 결과는 저장됐지만 보고서 응답을 받지 못해 표시 완료로 넘어가지 않았습니다.', analysisSuccess({ reportFailure: true }), 'api_report'),
 
-  // The current performance dashboard is a public, read-only endpoint.
-  define('dashboard', 'dashboard', '운영 대시보드·기간 조회', 'success', '로그인 여부와 관계없이 선택 기간의 예시 운영 기록을 조회합니다.',
+  // Every verified member can read operational metadata; no admin role is required.
+  define('dashboard', 'dashboard', '운영 대시보드·기간 조회', 'success', '로그인한 회원이 선택 기간의 예시 운영 기록을 조회합니다. 관리자 지정은 필요하지 않습니다.',
     '대시보드 요청 → 운영 자료 조회 → 집계·그래프 표시', '선택 기간의 예시 운영 기록과 집계를 표시했습니다. 실제 운영 자료는 읽지 않았습니다.', [
       step(0, 'dashboard', 'pending'), request(350, 'api_dashboard', 'pending'), step(750, 'database_read', 'running'),
       step(1250, 'database_read', 'complete'), request(1500, 'api_dashboard', 'complete', 1150, 'database_read'), step(1850, 'dashboard', 'complete'),
     ]),
-  define('dashboard_empty', 'dashboard', '운영 기록 없음', 'empty', '선택 기간에 예시 운영 기록이 없는 응답을 가정합니다.',
+  define('dashboard_empty', 'dashboard', '운영 기록 없음', 'empty', '로그인한 회원이 조회한 기간에 예시 운영 기록이 없는 응답을 가정합니다.',
     '조회 성공 → 기록 없음 안내', '가상 조회는 성공했지만 선택 기간에 운영 기록이 없습니다.', [
       step(0, 'dashboard', 'pending'), request(350, 'api_dashboard', 'pending'), step(750, 'database_read', 'empty'),
       request(1200, 'api_dashboard', 'complete', 850, 'database_read'), step(1500, 'dashboard', 'empty'), step(1850, 'notice', 'empty'),
     ]),
-  define('dashboard_failed', 'dashboard', '운영 기록 조회 실패', 'failure', '운영 기록 요청이 실패하는 예시 응답을 가정합니다.',
+  define('dashboard_failed', 'dashboard', '운영 기록 조회 실패', 'failure', '로그인한 회원의 운영 기록 요청이 실패하는 예시 응답을 가정합니다.',
     '조회 실패 → 미수집 안내·재시도', '가상 운영 기록 조회가 실패했습니다. 미수집 지표를 0으로 만들지 않습니다.', [
       step(0, 'dashboard', 'pending'), request(350, 'api_dashboard', 'pending'), request(1250, 'api_dashboard', 'failed', 900),
       step(1600, 'dashboard', 'failed'), step(1950, 'notice', 'failed'),

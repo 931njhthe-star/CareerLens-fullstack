@@ -34,15 +34,13 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-test('live flow entry opens its linked stream separately and stays unavailable without transport', () => {
+test('member flow entry launches a separate observer bound to the current work tab', () => {
   const linked = renderFlowEntry('/?view=flow&stream=tab-stream');
-  assert.match(linked, /href="\/\?view=flow&amp;stream=tab-stream" target="_blank" rel="noopener"/);
-  assert.match(linked, /data-admin-flow>실시간 이용 흐름 보기/);
-  assert.match(linked, /이 탭에서 이동·로그인·API 요청/);
-  const unavailable = renderFlowEntry(null);
-  assert.match(unavailable, /<button[^>]+disabled[^>]+aria-describedby="admin-flow-help"/);
-  assert.match(unavailable, /탭 간 실시간 연결을 사용할 수 없습니다/);
-  assert.doesNotMatch(unavailable, /data-admin-flow|href=/);
+  assert.match(linked, /href="\/\?view=flow&amp;stream=tab-stream"/);
+  assert.doesNotMatch(linked, /target="_blank"|로그인 없이/);
+  assert.match(linked, /현재 작업 창 하나/);
+  assert.match(linked, /data-admin-flow/);
+  assert.match(renderFlowEntry(null), /href="\/\?view=flow"/);
 });
 
 function harness() {
@@ -79,37 +77,11 @@ function harness() {
   return { root, content, announcement, refresh, handlers, nodes, change, click };
 }
 
-test('public dashboard entry and mount permit anonymous users without any identity or role', async () => {
-  for (const user of [
-    undefined,
-    null,
-    {},
-    { is_admin: false },
-    { is_admin: true },
-    { is_admin: 'true' },
-    { role: 'admin' },
-    { email: 'admin@example.com' },
-    { id: '' },
-    { id: '   ' },
-    { id: true },
-    { id: 1 },
-  ]) {
+test('anonymous or synthetic identities cannot render operational records', () => {
+  for (const user of [undefined, null, {}, {is_admin: true}, {id: ''}, {id: '  '}, {id: true}, {id: 1}, {id: 'demo', demo: true}]) {
     const markup = adminDashboard(user);
-    assert.match(markup, /data-admin-dashboard/);
-    assert.doesNotMatch(markup, /로그인이 필요합니다|관리자 권한이 필요합니다/);
-    const h = harness();
-    let called = false;
-    const cleanup = mountAdminDashboard(h.root, {
-      user,
-      api: async () => {
-        called = true;
-        return payload([{ id: 'public-run', status: 'completed' }]);
-      },
-    });
-    await tick();
-    assert.equal(called, true);
-    assert.match(h.content.innerHTML, /public-run/);
-    cleanup();
+    assert.doesNotMatch(markup, /data-admin-dashboard|data-admin-flow/);
+    assert.match(markup, /로그인 상태/);
   }
 });
 
@@ -158,11 +130,11 @@ test('dashboard shell starts loading with exactly six cards and accessible filte
   assert.doesNotMatch(markup, /0건|정상 가동|연동 준비 중|withdraw|계정 탈퇴/);
 });
 
-test('legacy server 401 fallback exposes a safe login return', () => {
+test('access denial gives a login path without mounting the flow entry', () => {
   const markup = adminAccessDenied();
-  assert.match(markup, /role="alert"/);
-  assert.match(markup, /href="#\/email"/);
-  assert.doesNotMatch(markup, /data-admin-|LLM/);
+  assert.doesNotMatch(markup, /data-admin-flow/);
+  assert.match(markup, /로그인 상태를 확인해 주세요/);
+  assert.match(markup, /href="\/#\/email"/);
 });
 
 test('six card counts come from the bounded returned sample, not aggregate run_count', () => {
@@ -395,15 +367,16 @@ test('date changes abort stale work; late results and cleanup cannot repopulate 
   assert.equal(h.content.innerHTML, before);
 });
 
-test('401 removes previously loaded data, asks for login and disables future queries', async () => {
-  for (const status of [401]) {
+test('authorization errors clear stale data and allow a member to retry', async () => {
+  for (const status of [401, 403]) {
     const h = harness();
+    h.root.innerHTML = adminDashboard({ id: 'member', is_admin: false });
     let requests = 0;
-    mountAdminDashboard(h.root, {
-      user: { id: 'signed-in-user', is_admin: true },
+    const cleanup = mountAdminDashboard(h.root, {
       api: async () => {
         requests++;
         if (requests === 1) return payload([{ id: 'private-run' }]);
+        if (requests > 2) return payload([{ id: 'public-after-update' }]);
         throw { status, message: 'private backend trace' };
       },
     });
@@ -411,9 +384,16 @@ test('401 removes previously loaded data, asks for login and disables future que
     assert.match(h.content.innerHTML, /private-run/);
     h.click('[data-admin-retry], [data-admin-refresh]');
     await tick();
-    assert.match(h.root.innerHTML, /로그인이 필요합니다/);
-    assert.doesNotMatch(h.root.innerHTML, /private-run|private backend trace/);
-    assert.equal(h.handlers.size, 0);
+    assert.match(h.root.innerHTML, /data-admin-dashboard/);
+    assert.match(h.root.innerHTML, /실시간 이용 흐름/);
+    assert.match(h.content.innerHTML, /로그인 상태를 확인해 주세요/);
+    assert.doesNotMatch(h.content.innerHTML, /private-run|private backend trace|로그인이 필요합니다|href="#\/email"/);
+    assert.equal(h.refresh.disabled, false);
+    assert.equal(h.handlers.size, 2);
+    h.click('[data-admin-retry], [data-admin-refresh]');
+    await tick();
+    assert.match(h.content.innerHTML, /public-after-update/);
+    cleanup();
   }
 });
 
@@ -438,7 +418,7 @@ test('403 clears private detail and preserves six unavailable cards with retry',
   h.click('[data-admin-retry], [data-admin-refresh]');
   await tick();
   assert.match(h.root.innerHTML, /data-admin-dashboard/);
-  assert.match(h.content.innerHTML, /운영 데이터 조회 권한이 없습니다/);
+  assert.match(h.content.innerHTML, /로그인 상태를 확인해 주세요/);
   assert.equal((h.content.innerHTML.match(/<dd>조회 불가<\/dd>/g) || []).length, 6);
   assert.doesNotMatch(
     h.content.innerHTML,
@@ -448,11 +428,11 @@ test('403 clears private detail and preserves six unavailable cards with retry',
   assert.equal(h.content.attrs['aria-busy'], 'false');
   assert.equal(h.handlers.size, 2);
   h.change('[data-admin-status]', 'all');
-  assert.match(h.content.innerHTML, /운영 데이터 조회 권한이 없습니다/);
+  assert.match(h.content.innerHTML, /로그인 상태를 확인해 주세요/);
   h.click('[data-admin-retry], [data-admin-refresh]');
   await tick();
   assert.match(h.content.innerHTML, /newly-permitted-run/);
-  assert.doesNotMatch(h.content.innerHTML, /운영 데이터 조회 권한이 없습니다|previous-private-run/);
+  assert.doesNotMatch(h.content.innerHTML, /로그인 상태를 확인해 주세요|previous-private-run/);
   assert.deepEqual(user, { id: 'ordinary-member', is_admin: false });
   cleanup();
 });
@@ -588,6 +568,24 @@ test('scope and freshness clearly identify all-account executions rather than sa
   assert.match(markup, /마지막 조회/);
   assert.match(markup, /18:00 KST/);
   assert.match(markup, /60초마다·화면 복귀 시 자동 갱신/);
+});
+
+test('original API account scope is correctly reflected in cards, accessibility and explanation', () => {
+  const data = normalizePerformance({ ...payload([{ id: 'own-run', status: 'completed' }]),
+    scope: { mode: 'account', days: 30, run_limit: 100 } });
+  const markup = renderPerformanceView(data);
+  assert.match(markup, /현재 로그인한 계정의 평가 실행 기록입니다/);
+  assert.match(markup, /aria-label="현재 계정의 현재 조회 표본 상태"/);
+  assert.equal((markup.match(/현재 계정 · 조회 표본/g) || []).length, 6);
+  assert.doesNotMatch(markup, /전체 계정/);
+  assert.match(markup, /마이페이지에 저장된 개인 보고서 개수가 아닙니다/);
+});
+
+test('missing scope or a loading response never assumes all-account access', () => {
+  const markup = renderPerformanceView(normalizePerformance(payload([])));
+  assert.match(markup, /계정 범위는 제공되지 않았습니다/);
+  assert.match(markup, /현재 응답 · 조회 표본/);
+  assert.doesNotMatch(markup + overviewCards(null), /전체 계정/);
 });
 
 test('technical names have Korean explanations and missing node duration is not derived', () => {

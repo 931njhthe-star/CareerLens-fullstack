@@ -1,0 +1,7 @@
+{$CAREERLENS_DOMAIN} {
+    reverse_proxy frontend:5300
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+    }
+}

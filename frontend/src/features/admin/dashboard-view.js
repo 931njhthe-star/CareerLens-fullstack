@@ -46,19 +46,22 @@ const sectionNotice = (run, section, fallback) => {
 const criterion = (value) => text(value, '해당 없음');
 const attempt = (value) => measuredCount(value) === null ? '기록 없음' : String(value);
 const verdict = (value) => text({ met: '충족', not_met: '미충족', unknown: '판정 보류', not_applicable: '해당 없음' }[value] || value);
+const accountScopeLabel = (data) => data?.scope?.mode === 'account' ? '현재 계정'
+  : data?.scope?.accounts === 'all' ? '전체 계정' : '현재 응답';
 
 export function renderFlowEntry(flowUrl) {
-  return `<section class="admin-dashboard__flow-entry" aria-labelledby="admin-flow-title"><div><h2 id="admin-flow-title">실시간 이용 흐름</h2><p id="admin-flow-help">${flowUrl ? '이 탭에서 이동·로그인·API 요청을 실행하면 새 탭의 흐름 화면에 반영됩니다.' : '현재 브라우저에서는 탭 간 실시간 연결을 사용할 수 없습니다. 최신 Chrome 또는 Edge에서 열어 주세요.'}</p></div>${flowUrl ? `<a class="button secondary" href="${e(flowUrl)}" target="_blank" rel="noopener" aria-describedby="admin-flow-help" data-admin-flow>실시간 이용 흐름 보기 <span class="admin-dashboard__new-tab">새 탭</span></a>` : '<button type="button" class="button secondary" disabled aria-describedby="admin-flow-help">실시간 이용 흐름 보기</button>'}</section>`;
+  return `<section class="admin-dashboard__flow-entry" aria-labelledby="admin-flow-title"><div><h2 id="admin-flow-title">이 작업 창의 이용 흐름</h2><p id="admin-flow-help">현재 작업 창 하나와 연결된 별도 관찰 창을 엽니다. 다른 작업 창의 요청은 섞이지 않으며 원래 창을 새로고침해도 다시 연결합니다.</p></div><a class="button secondary" href="${e(flowUrl || '/?view=flow')}" aria-describedby="admin-flow-help" data-admin-flow>이용 흐름 새 창 열기</a></section>`;
 }
 
 export function overviewCards(data, { pending = true } = {}) {
   const counts = data ? overviewCounts(data.runs) : null;
+  const scopeLabel = accountScopeLabel(data);
   const labels = [['queued', '대기 분석'], ['running', '실행 중 분석'], ['completed', '정상 완료'], ['partial', '완료 · 확인 필요'], ['failed', '실패'], ['cancelled', '취소']];
-  return `<dl class="admin-dashboard__cards" aria-label="전체 계정의 현재 조회 표본 상태">${labels.map(([key, label]) => `<div class="admin-dashboard__card admin-dashboard__card--${key}"><dt>${e(label)}</dt><dd>${counts ? formatCount(counts[key]) : pending ? '조회 중' : '조회 불가'}</dd><span>전체 계정 · 조회 표본</span></div>`).join('')}</dl>`;
+  return `<dl class="admin-dashboard__cards" aria-label="${scopeLabel}의 현재 조회 표본 상태">${labels.map(([key, label]) => `<div class="admin-dashboard__card admin-dashboard__card--${key}"><dt>${e(label)}</dt><dd>${counts ? formatCount(counts[key]) : pending ? '조회 중' : '조회 불가'}</dd><span>${scopeLabel} · 조회 표본</span></div>`).join('')}</dl>`;
 }
 
 export function renderRestrictedView() {
-  return `<div class="admin-dashboard__feedback" role="status"><h2>운영 데이터 조회 권한이 없습니다</h2><p>현재 연결된 서버에서 조회를 허용하지 않았습니다. 권한 또는 서버 연결을 확인해 주세요.</p><button class="button secondary" type="button" data-admin-retry>다시 시도</button></div>${overviewCards(null, { pending: false })}`;
+  return `<div class="admin-dashboard__feedback" role="status"><h2>로그인 상태를 확인해 주세요</h2><p>대시보드와 이용 흐름은 가입한 모든 회원이 이용할 수 있습니다. 관리자 권한은 필요하지 않습니다.</p><p>로그인 후에도 접근이 거절되면 프론트엔드와 백엔드를 모두 최신 버전으로 갱신하고 서버를 다시 시작해 주세요.</p><a class="button secondary" href="/#/email">로그인</a><button class="button secondary" type="button" data-admin-retry>다시 시도</button></div>${overviewCards(null, { pending: false })}`;
 }
 
 function aggregateStages(stages) {
@@ -193,9 +196,12 @@ function listView(data, status, selectedIndex) {
 export function renderPerformanceView(data, { days = 30, status = 'all', selectedIndex = -1, detailLoading = false, detailError = false, updatedAt = null } = {}) {
   const counts = overviewCounts(data.runs);
   const scope = data.scope || {};
+  const scopeDescription = scope.mode === 'account' ? '현재 로그인한 계정의 평가 실행 기록입니다.'
+    : scope.accounts === 'all' ? '전체 계정의 평가 실행 기록입니다.'
+      : '서버가 반환한 평가 실행 기록입니다. 계정 범위는 제공되지 않았습니다.';
   const selected = data.runs[selectedIndex];
   const filteredCount = filterRuns(data.runs, status).length;
-  return `${overviewCards(data)}<div class="admin-dashboard__scope"><p>전체 계정의 평가 실행 기록입니다. 마이페이지에 저장된 개인 보고서 개수가 아닙니다.</p><p>최근 ${days}일 · 최근 최대 ${RUN_LIMIT}건 요청 · 현재 응답 표본 ${data.runs.length}건 · 목록 필터 결과 ${filteredCount}건. 상태 카드는 필터와 무관하게 조회 표본을 집계합니다.${counts.other ? ` 알려지지 않은 상태 ${counts.other}건은 별도입니다.` : ''}</p><p>서버 집계 ${formatCount(data.summary.run_count)} · 마지막 조회 ${formatTime(updatedAt || data.generated_at)} · 60초마다·화면 복귀 시 자동 갱신${scope.total_runs !== undefined ? ` · 기간 내 전체 실행 ${formatCount(scope.total_runs)}` : ''}</p></div>${panel('runs', '01 / EXECUTIONS', '실행 현황·목록', '실행을 선택하면 저장된 상세 기록을 조회합니다. 완료·확인 필요는 진행 중 상태가 아닙니다.', listView(data, status, selectedIndex))}<div id="admin-selected-run">${renderRunDetail(selected, { loading: detailLoading, error: detailError })}</div>${panel('timing', '02 / PERFORMANCE', '단계별 소요 시간', '입력 파싱부터 보고서 저장까지의 서버 집계입니다. 병렬 단계의 합은 전체 실행 시간과 다를 수 있습니다.', facts([['서버 성능 집계 실행 수', formatCount(data.summary.run_count)], ['평균 전체 소요', formatDuration(data.summary.avg_total_ms)], ['P95 전체 소요', formatDuration(data.summary.p95_total_ms)]]) + aggregateStages(data.stages) + missing('선택 기간의 최근 실행 표본에 저장된 계측 기록을 집계합니다. 단계 표본 수에는 재시도 기록도 포함됩니다. P50은 중앙값, P95는 측정값 95%가 이 값 이하인 시간입니다. 막대는 평균 시간의 상대 길이이며 진행률이 아닙니다.'))}`;
+  return `${overviewCards(data)}<div class="admin-dashboard__scope"><p>${scopeDescription} 마이페이지에 저장된 개인 보고서 개수가 아닙니다.</p><p>최근 ${days}일 · 최근 최대 ${RUN_LIMIT}건 요청 · 현재 응답 표본 ${data.runs.length}건 · 목록 필터 결과 ${filteredCount}건. 상태 카드는 필터와 무관하게 조회 표본을 집계합니다.${counts.other ? ` 알려지지 않은 상태 ${counts.other}건은 별도입니다.` : ''}</p><p>서버 집계 ${formatCount(data.summary.run_count)} · 마지막 조회 ${formatTime(updatedAt || data.generated_at)} · 60초마다·화면 복귀 시 자동 갱신${scope.total_runs !== undefined ? ` · 기간 내 전체 실행 ${formatCount(scope.total_runs)}` : ''}</p></div>${panel('runs', '01 / EXECUTIONS', '실행 현황·목록', '실행을 선택하면 저장된 상세 기록을 조회합니다. 완료·확인 필요는 진행 중 상태가 아닙니다.', listView(data, status, selectedIndex))}<div id="admin-selected-run">${renderRunDetail(selected, { loading: detailLoading, error: detailError })}</div>${panel('timing', '02 / PERFORMANCE', '단계별 소요 시간', '입력 파싱부터 보고서 저장까지의 서버 집계입니다. 병렬 단계의 합은 전체 실행 시간과 다를 수 있습니다.', facts([['서버 성능 집계 실행 수', formatCount(data.summary.run_count)], ['평균 전체 소요', formatDuration(data.summary.avg_total_ms)], ['P95 전체 소요', formatDuration(data.summary.p95_total_ms)]]) + aggregateStages(data.stages) + missing('선택 기간의 최근 실행 표본에 저장된 계측 기록을 집계합니다. 단계 표본 수에는 재시도 기록도 포함됩니다. P50은 중앙값, P95는 측정값 95%가 이 값 이하인 시간입니다. 막대는 평균 시간의 상대 길이이며 진행률이 아닙니다.'))}`;
 }
 
 export function renderLoadingView() {
