@@ -102,7 +102,7 @@ test('ordinary signed-in members open the dashboard without an admin role', asyn
       },
     });
     await tick();
-    assert.equal(path, '/admin/evaluation-performance?days=30&run_limit=100');
+    assert.equal(path, '/member/evaluation-performance?days=30&run_limit=100');
     assert.match(h.content.innerHTML, /실행 현황·목록/);
     cleanup();
   }
@@ -325,7 +325,7 @@ test('public mount requests the bounded API without a user option and cleans lis
   });
   assert.equal(h.refresh.disabled, true);
   await tick();
-  assert.equal(calls[0][0], '/admin/evaluation-performance?days=30&run_limit=100');
+  assert.equal(calls[0][0], '/member/evaluation-performance?days=30&run_limit=100');
   assert.ok(calls[0][1].signal instanceof AbortSignal);
   assert.match(h.content.innerHTML, /run-zero/);
   assert.equal(h.content.attrs['aria-busy'], 'false');

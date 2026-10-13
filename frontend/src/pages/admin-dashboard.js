@@ -116,7 +116,7 @@ export function mountAdminDashboard(root, {
     detailLoading = true;
     render();
     try {
-      const payload = await api(`/admin/evaluation-performance/${encodeURIComponent(selectedId)}`, {
+      const payload = await api(`/member/evaluation-performance/${encodeURIComponent(selectedId)}`, {
         signal: detailRequest.signal,
       });
       if (disposed || current !== detailGeneration || data?.runs[selectedIndex]?.id !== selectedId) return;
@@ -155,7 +155,7 @@ export function mountAdminDashboard(root, {
     announcement.textContent = '운영 기록 조회 중';
     try {
       const payload = await api(
-        `/admin/evaluation-performance?days=${days}&run_limit=${RUN_LIMIT}`,
+        `/member/evaluation-performance?days=${days}&run_limit=${RUN_LIMIT}`,
         { signal: request.signal },
       );
       if (disposed || current !== generation) return;

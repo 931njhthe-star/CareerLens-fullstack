@@ -44,6 +44,18 @@ def test_guest_denied_before_any_upstream_request(path):
     assert response.status_code == 401
     assert not opener.calls
 
+
+def test_member_route_avoids_integrated_backend_admin_path():
+    opener = Opener([row()])
+    response = client(opener).get(
+        "/api/v1/member/evaluation-performance?run_limit=100",
+        headers={"Authorization": "Bearer fixture-token"},
+    )
+    assert response.status_code == 200
+    assert response.json["scope"]["mode"] == "account"
+    assert opener.calls[0].full_url == "https://api.example.test/api/v1/evaluations?limit=100&offset=0"
+
+
 def test_member_uses_existing_owned_list_not_administrator_route():
     opener = Opener([row(user_id="private-owner", original_text="private-resume", token="private-token")])
     response = client(opener).get("/api/v1/admin/evaluation-performance?run_limit=100", headers={"Authorization": "Bearer synthetic-member"})

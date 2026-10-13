@@ -4,6 +4,7 @@ import json
 import secrets
 import time
 import tiktoken
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header, Query, Request
 from fastapi.encoders import jsonable_encoder
@@ -163,6 +164,83 @@ async def evaluation_performance(
         'p_days': days,
         'p_run_limit': run_limit,
     })
+
+
+def member_dashboard_run(row: dict) -> dict:
+    result = {}
+    try:
+        result['id'] = str(UUID(str(row['id'])))
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(503, '평가 기록을 읽을 수 없습니다.') from None
+    if row.get('status') in {'queued', 'running', 'completed', 'partial', 'failed', 'cancelled'}:
+        result['status'] = row['status']
+    for field in ('created_at', 'started_at', 'completed_at'):
+        value = row.get(field)
+        if isinstance(value, datetime):
+            result[field] = value
+        elif isinstance(value, str) and len(value) <= 40:
+            try:
+                parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except ValueError:
+                continue
+            if parsed.tzinfo:
+                result[field] = parsed
+    return result
+
+
+@router.get('/member/evaluation-performance', tags=['member'])
+async def member_evaluation_performance(
+    request: Request,
+    days: int = Query(30, ge=1, le=90),
+    run_limit: int = Query(100, ge=1, le=200),
+    uid: str = Depends(user),
+):
+    db, _, _ = services(request)
+    rows = await db.select(
+        'evaluation_runs',
+        user_id=f'eq.{uid}',
+        select='id,status,created_at,started_at,completed_at',
+        order='created_at.desc',
+        limit=run_limit,
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    runs = []
+    for row in rows:
+        run = member_dashboard_run(row)
+        created_at = run.get('created_at')
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        if isinstance(created_at, datetime) and created_at.tzinfo and created_at >= cutoff:
+            runs.append(run)
+    return jsonable_encoder({
+        'generated_at': datetime.now(timezone.utc),
+        'runs': runs,
+        'stages': [],
+        'summary': {'run_count': len(runs)},
+        'scope': {
+            'mode': 'account',
+            'days': days,
+            'run_limit': run_limit,
+            'limited': len(rows) >= run_limit,
+            'reason': '현재 계정의 최근 실행 표본입니다. 원본 API는 전체 계정 집계와 상세 계측을 일반 회원에게 제공하지 않습니다.',
+        },
+    })
+
+
+@router.get('/member/evaluation-performance/{run_id}', tags=['member'])
+async def member_evaluation_performance_detail(
+    run_id: UUID,
+    request: Request,
+    uid: str = Depends(user),
+):
+    db, _, _ = services(request)
+    run = member_dashboard_run(await owned(db, 'evaluation_runs', run_id, uid))
+    reason = '현재 원본 API에서 이 상세 계측을 제공하지 않습니다. 실제 실행 여부나 0값으로 추정하지 않습니다.'
+    run['availability'] = {
+        name: {'status': 'unsupported', 'reason': reason}
+        for name in ('input', 'nodes', 'tools', 'memory', 'validation', 'scores', 'persistence', 'llm', 'usage', 'test_evidence')
+    }
+    return jsonable_encoder({'run': run, 'scope': {'mode': 'account'}})
 
 
 @router.post('/resumes', status_code=201, tags=['resumes'], response_model=UploadedResume)

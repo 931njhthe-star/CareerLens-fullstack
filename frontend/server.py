@@ -532,6 +532,7 @@ def create_app(backend_url=None, *, integrated=False):
         return result
 
     @app.get("/api/v1/admin/evaluation-performance")
+    @app.get("/api/v1/member/evaluation-performance")
     def member_dashboard():
         try:
             days = int(request.args.get("days", "30"))
@@ -559,6 +560,7 @@ def create_app(backend_url=None, *, integrated=False):
                                   "reason": "현재 계정의 최근 실행 표본입니다. 원본 API는 전체 계정 집계와 상세 계측을 일반 회원에게 제공하지 않습니다."}})
 
     @app.get("/api/v1/admin/evaluation-performance/<uuid:run_id>")
+    @app.get("/api/v1/member/evaluation-performance/<uuid:run_id>")
     def member_dashboard_detail(run_id):
         run = dashboard_run(member_dashboard_json(f"evaluations/{run_id}"))
         if run["id"] != str(run_id):

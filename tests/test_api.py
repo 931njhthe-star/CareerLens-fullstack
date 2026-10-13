@@ -1,6 +1,6 @@
 import asyncio
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 from types import SimpleNamespace
@@ -136,6 +136,80 @@ def test_cross_user_resume_is_hidden():
             app.state.db = FakeDB()
             assert client.get('/api/v1/resumes/' + str(uuid4())).status_code == 404
     finally: app.dependency_overrides.clear()
+
+
+def test_member_dashboard_lists_only_the_authenticated_users_recent_runs():
+    uid = str(uuid4())
+    recent_id, old_id = str(uuid4()), str(uuid4())
+    now = datetime.now(timezone.utc)
+
+    class FakeDB:
+        async def select(self, table, **params):
+            assert table == 'evaluation_runs'
+            assert params == {
+                'user_id': f'eq.{uid}',
+                'select': 'id,status,created_at,started_at,completed_at',
+                'order': 'created_at.desc',
+                'limit': 100,
+            }
+            return [
+                {'id': recent_id, 'status': 'completed', 'created_at': now,
+                 'original_text': 'must not be returned'},
+                {'id': old_id, 'status': 'failed',
+                 'created_at': now - timedelta(days=31)},
+            ]
+
+    app.dependency_overrides[user] = lambda: uid
+    try:
+        with TestClient(app) as client:
+            original_db = app.state.db
+            try:
+                app.state.db = FakeDB()
+                response = client.get('/api/v1/member/evaluation-performance?days=30&run_limit=100')
+            finally:
+                app.state.db = original_db
+        assert response.status_code == 200
+        result = response.json()
+        assert result['scope']['mode'] == 'account'
+        assert result['summary']['run_count'] == 1
+        assert [run['id'] for run in result['runs']] == [recent_id]
+        assert 'original_text' not in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_member_dashboard_detail_uses_existing_run_ownership_check():
+    uid, run_id = str(uuid4()), uuid4()
+
+    class FakeDB:
+        async def select(self, table, **params):
+            assert table == 'evaluation_runs'
+            assert params == {'id': f'eq.{run_id}', 'user_id': f'eq.{uid}', 'limit': 1}
+            return [{
+                'id': run_id,
+                'status': 'completed',
+                'created_at': datetime.now(timezone.utc),
+                'original_text': 'must not be returned',
+                'failure_reason': 'private diagnostic',
+            }]
+
+    app.dependency_overrides[user] = lambda: uid
+    try:
+        with TestClient(app) as client:
+            original_db = app.state.db
+            try:
+                app.state.db = FakeDB()
+                response = client.get(f'/api/v1/member/evaluation-performance/{run_id}')
+            finally:
+                app.state.db = original_db
+        assert response.status_code == 200
+        result = response.json()
+        assert result['run']['id'] == str(run_id)
+        assert result['run']['availability']['llm']['status'] == 'unsupported'
+        assert 'original_text' not in response.text
+        assert 'private diagnostic' not in response.text
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_jobs_expose_markdown_source_identifiers_for_frontend_matching():

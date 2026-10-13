@@ -112,7 +112,7 @@ async function requestApi(
       method,
       headers,
       credentials: 'same-origin',
-      ...(/^\/admin\/evaluation-performance(?:[/?]|$)/.test(path) ? { cache: 'no-store' } : {}),
+      ...(/^\/(?:admin|member)\/evaluation-performance(?:[/?]|$)/.test(path) ? { cache: 'no-store' } : {}),
       signal,
       keepalive,
       body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),

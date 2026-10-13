@@ -20,6 +20,24 @@ def test_frontend_server_imports_as_backend_package():
     )
 
 
+def test_member_dashboard_path_reaches_frontend_mount_in_integrated_backend():
+    root = Path(__file__).resolve().parents[2]
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from fastapi.testclient import TestClient; from app.main import app; "
+            "response = TestClient(app, base_url='http://127.0.0.1').get("
+            "'/api/v1/member/evaluation-performance'); "
+            "assert response.status_code == 401, response.status_code",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_integrated_frontend_exposes_session_contract_fallback_only():
     integrated = server.create_app(backend_url="", integrated=True).test_client()
     standalone = server.create_app(backend_url="").test_client()
