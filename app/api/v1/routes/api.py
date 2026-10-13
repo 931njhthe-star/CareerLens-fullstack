@@ -157,9 +157,9 @@ async def evaluation_performance(
             if value.strip()
         }
     except ValueError:
-        raise HTTPException(503, 'ADMIN_USER_IDS에 올바른 사용자 UUID를 설정해야 합니다.') from None
+        return await member_evaluation_performance(request, days, run_limit, uid)
     if uid not in allowed:
-        raise HTTPException(403, '성능 대시보드 관리자 권한이 없습니다.')
+        return await member_evaluation_performance(request, days, run_limit, uid)
     return await db.rpc('get_evaluation_performance', {
         'p_days': days,
         'p_run_limit': run_limit,

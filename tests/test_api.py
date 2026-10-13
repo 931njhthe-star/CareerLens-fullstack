@@ -178,6 +178,40 @@ def test_member_dashboard_lists_only_the_authenticated_users_recent_runs():
         app.dependency_overrides.clear()
 
 
+def test_legacy_admin_dashboard_path_returns_only_the_authenticated_members_runs():
+    uid, run_id = str(uuid4()), str(uuid4())
+    now = datetime.now(timezone.utc)
+
+    class FakeDB:
+        async def select(self, table, **params):
+            assert table == 'evaluation_runs'
+            assert params == {
+                'user_id': f'eq.{uid}',
+                'select': 'id,status,created_at,started_at,completed_at',
+                'order': 'created_at.desc',
+                'limit': 100,
+            }
+            return [{'id': run_id, 'status': 'completed', 'created_at': now}]
+
+        async def rpc(self, *_args, **_kwargs):
+            pytest.fail('Member dashboard must not call the administrator aggregate')
+
+    app.dependency_overrides[user] = lambda: uid
+    try:
+        with TestClient(app) as client:
+            original_db = app.state.db
+            try:
+                app.state.db = FakeDB()
+                response = client.get('/api/v1/admin/evaluation-performance?days=30&run_limit=100')
+            finally:
+                app.state.db = original_db
+        assert response.status_code == 200
+        assert response.json()['scope']['mode'] == 'account'
+        assert [run['id'] for run in response.json()['runs']] == [run_id]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_member_dashboard_detail_uses_existing_run_ownership_check():
     uid, run_id = str(uuid4()), uuid4()
 

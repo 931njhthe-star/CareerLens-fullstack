@@ -158,7 +158,7 @@ export function classifyFlowRequest(path) {
   if (/^\/auth\/(session|refresh)$/.test(clean) || clean === '/me') return 'api_session';
   if (clean === '/local-data/convert-resume') return 'api_convert';
   if (/^\/evaluations\/[^/]+\/cancel$/.test(clean)) return 'api_cancel';
-  if (/^\/admin\/evaluation-performance(?:\/[^/]+)?$/.test(clean)) return 'api_dashboard';
+  if (/^\/(?:admin|member)\/evaluation-performance(?:\/[^/]+)?$/.test(clean)) return 'api_dashboard';
   if (/^\/evaluations\/[^/]+\/result$/.test(clean)) return 'api_report';
   if (/^\/auth\/(session|login|signup|register|logout|refresh|forgot-password|reset-password)$/.test(clean) || clean === '/me') return 'api_auth';
   if (/^\/(resumes(?:\/[^/]+)?|resume(?:\/upload)?|guest\/resume\/upload|local-data\/convert-resume)$/.test(clean)) return 'api_resume';
