@@ -8,6 +8,7 @@ import { createCentralFlowMonitor } from './central-transport.js';
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const glyph = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${{
   lens: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  dashboard: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><rect x="3" y="14" width="8" height="7" rx="1"/>',
   arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
   play: '<path d="m8 5 11 7-11 7Z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
@@ -33,13 +34,17 @@ function pageMarkup(hasStream, central) {
     <header class="flow-header">
       <a class="flow-brand" href="/#/resume" target="_blank" rel="noopener" aria-label="CareerLens 새 앱 탭 열기">${glyph('lens')}<span>Career<span>Lens</span></span></a>
       <span class="flow-header-divider"></span><h1>이용 흐름</h1>
-      <a class="flow-dashboard-link" href="/#/admin">대시보드</a>
       <div class="flow-toolbar"><label class="flow-select-label">관찰 모드<select data-flow-mode aria-label="관찰 모드">${central ? '<option value="live">실시간 · 전체 이용</option><option value="local">이 브라우저만</option>' : `<option value="live" ${hasStream ? '' : 'disabled'}>실시간 · 브라우저 탭</option>`}<option value="demo">시연 · 가상 이벤트</option></select></label>
       <label class="flow-select-label" data-flow-source-label>상세 지도 대상<select data-flow-source aria-label="상세 지도 대상"><option value="auto">최근 이용 자동 추적</option></select></label>
       <div class="flow-theme-switch" role="group" aria-label="화면 밝기"><button type="button" data-flow-theme="light" aria-pressed="false">${glyph('sun')}밝게</button><button type="button" data-flow-theme="dark" aria-pressed="true">${glyph('moon')}어둡게</button></div>
       <button class="flow-icon-button" data-flow-motion aria-label="동작 줄이기" aria-pressed="false">${glyph('wave')}</button>
       <a class="flow-app-link" href="/#/mypage">마이페이지 ${glyph('arrow')}</a></div>
     </header>
+    <a class="flow-dashboard-banner" href="/#/admin">
+      <span class="flow-dashboard-banner-icon">${glyph('dashboard')}</span>
+      <span class="flow-dashboard-banner-copy"><strong>대시보드에서 실행 기록과 평가 결과를 확인하세요</strong><span>모의지원 기록과 평가 결과를 한곳에서 살펴볼 수 있습니다.</span></span>
+      <span class="flow-dashboard-banner-action">대시보드 열기 ${glyph('arrow')}</span>
+    </a>
     <section class="flow-intro" aria-label="관찰 범위">
       <div><h2>하나의 행동이, 결과가 되기까지.</h2><p>사용자의 시작부터 API, 분석, 보고서까지. 움직이는 연결선으로 흐름을 따라가세요.</p></div>
       <div class="flow-connection"><span class="flow-status-dot"></span><strong data-flow-connection></strong><span data-flow-scope></span></div>

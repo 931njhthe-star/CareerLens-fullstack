@@ -218,13 +218,17 @@ async function viewerFixture({ central = false, paired = false, request } = {}) 
   };
 }
 
-test('flow viewer header links to the dashboard with a centered prominent button', async () => {
+test('flow viewer shows a wide dashboard banner below the header', async () => {
   const view = await viewerFixture();
   try {
-    assert.match(view.host.innerHTML, /<a class="flow-dashboard-link" href="\/#\/admin">대시보드<\/a>/);
+    assert.match(view.host.innerHTML, /<a class="flow-dashboard-banner" href="\/#\/admin">/);
+    assert.match(view.host.innerHTML, /대시보드에서 실행 기록과 평가 결과를 확인하세요/);
+    assert.match(view.host.innerHTML, /대시보드 열기/);
+    assert.ok(view.host.innerHTML.indexOf('flow-dashboard-banner') > view.host.innerHTML.indexOf('flow-header'));
+    assert.ok(view.host.innerHTML.indexOf('flow-dashboard-banner') < view.host.innerHTML.indexOf('flow-intro'));
     const css = await readFile(new URL('../../src/shared/styles/activity-flow.css', import.meta.url), 'utf8');
-    assert.match(css, /\.flow-dashboard-link\s*\{[^}]*left:\s*50%/);
-    assert.match(css, /\.flow-dashboard-link\s*\{[^}]*position:\s*absolute/);
+    assert.match(css, /\.flow-dashboard-banner\s*\{[^}]*width:\s*100%/);
+    assert.match(css, /\.flow-dashboard-banner-action\s*\{/);
   } finally {
     view.dispose();
   }
