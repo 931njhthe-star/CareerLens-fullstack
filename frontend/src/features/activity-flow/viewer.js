@@ -33,6 +33,7 @@ function pageMarkup(hasStream, central) {
     <header class="flow-header">
       <a class="flow-brand" href="/#/resume" target="_blank" rel="noopener" aria-label="CareerLens 새 앱 탭 열기">${glyph('lens')}<span>Career<span>Lens</span></span></a>
       <span class="flow-header-divider"></span><h1>이용 흐름</h1>
+      <a class="flow-dashboard-link" href="/#/admin">대시보드</a>
       <div class="flow-toolbar"><label class="flow-select-label">관찰 모드<select data-flow-mode aria-label="관찰 모드">${central ? '<option value="live">실시간 · 전체 이용</option><option value="local">이 브라우저만</option>' : `<option value="live" ${hasStream ? '' : 'disabled'}>실시간 · 브라우저 탭</option>`}<option value="demo">시연 · 가상 이벤트</option></select></label>
       <label class="flow-select-label" data-flow-source-label>상세 지도 대상<select data-flow-source aria-label="상세 지도 대상"><option value="auto">최근 이용 자동 추적</option></select></label>
       <div class="flow-theme-switch" role="group" aria-label="화면 밝기"><button type="button" data-flow-theme="light" aria-pressed="false">${glyph('sun')}밝게</button><button type="button" data-flow-theme="dark" aria-pressed="true">${glyph('moon')}어둡게</button></div>

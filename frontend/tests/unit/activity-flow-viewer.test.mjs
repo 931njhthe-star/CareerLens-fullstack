@@ -218,6 +218,18 @@ async function viewerFixture({ central = false, paired = false, request } = {}) 
   };
 }
 
+test('flow viewer header links to the dashboard with a centered prominent button', async () => {
+  const view = await viewerFixture();
+  try {
+    assert.match(view.host.innerHTML, /<a class="flow-dashboard-link" href="\/#\/admin">대시보드<\/a>/);
+    const css = await readFile(new URL('../../src/shared/styles/activity-flow.css', import.meta.url), 'utf8');
+    assert.match(css, /\.flow-dashboard-link\s*\{[^}]*left:\s*50%/);
+    assert.match(css, /\.flow-dashboard-link\s*\{[^}]*position:\s*absolute/);
+  } finally {
+    view.dispose();
+  }
+});
+
 const requestEvent = (id, state, at, durationMs = null) => ({
   id, node: 'api_jobs', kind: 'request', source: 'observed', state, at, durationMs, progress: null, method: 'GET',
 });

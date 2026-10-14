@@ -16,7 +16,7 @@
 .flow-shell button:disabled { cursor: default; opacity: .5; }
 .flow-shell a { color: inherit; text-decoration: none; }
 .flow-shell p, .flow-shell h1, .flow-shell h2, .flow-shell h3 { margin: 0; }
-.flow-header { min-height: 70px; display: flex; gap: 23px; align-items: center; border-bottom: 1px solid var(--flow-border); }
+.flow-header { position: relative; min-height: 70px; display: flex; gap: 23px; align-items: center; border-bottom: 1px solid var(--flow-border); }
 .flow-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; letter-spacing: -.025em; }
 .flow-brand > svg { width: 32px; height: 32px; color: var(--flow-cyan); }
 .flow-brand > span > span { color: #82b4ff; }
@@ -35,6 +35,8 @@
 .flow-icon-button svg, .flow-app-link svg { width: 20px; height: 20px; }
 .flow-app-link { display: flex; gap: 10px; align-items: center; font-weight: 600; padding: 8px; }
 .flow-app-link:hover { color: var(--flow-cyan); }
+.flow-dashboard-link { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 9px 18px; border: 1px solid #3c6173; border-radius: 8px; background: #132a3a; color: #a3edf7; font-weight: 700; white-space: nowrap; }
+.flow-dashboard-link:hover { border-color: var(--flow-cyan); background: #183548; color: #d7faff; }
 .flow-intro { display: flex; align-items: center; justify-content: space-between; gap: 25px; padding: 23px 0 17px; }
 .flow-intro h2 { font-size: clamp(21px, 2.1vw, 31px); font-weight: 600; letter-spacing: -.035em; line-height: 1.45; }
 .flow-intro p { color: var(--flow-muted); margin-top: 9px; line-height: 1.7; }
@@ -278,11 +280,13 @@
 }
 @media (min-width: 651px) and (max-width: 900px) {
   .flow-header { flex-wrap: wrap; padding-block: 16px; gap: 14px; }
+  .flow-dashboard-link { position: static; transform: none; margin-left: auto; }
   .flow-toolbar { width: 100%; margin: 0; }
   .flow-select-label { margin-right: auto; }
 }
 @media (max-width: 650px) {
   .flow-shell { padding: 0 13px 16px; } .flow-header { flex-wrap: wrap; padding: 17px 0 14px; gap: 11px; }
+  .flow-dashboard-link { position: static; transform: none; margin-left: auto; padding: 8px 12px; font-size: 11px; }
   .flow-brand { font-size: 19px; } .flow-brand > svg { width: 27px; height: 27px; } .flow-header h1 { font-size: 13px; }
   .flow-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 35px auto; gap: 10px; width: 100%; margin: 1px 0 0; } .flow-select-label { min-width: 0; } .flow-select-label select { width: 100%; }
   .flow-theme-switch { grid-column: 1 / -1; grid-row: 1; } .flow-theme-switch button { flex: 1; min-height: 34px; }
