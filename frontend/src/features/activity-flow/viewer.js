@@ -40,7 +40,7 @@ function pageMarkup(hasStream, central) {
       <button class="flow-icon-button" data-flow-motion aria-label="동작 줄이기" aria-pressed="false">${glyph('wave')}</button>
       <a class="flow-app-link" href="/#/mypage">마이페이지 ${glyph('arrow')}</a></div>
     </header>
-    <a class="flow-dashboard-banner" href="/#/admin" target="_blank" rel="noopener" aria-label="대시보드에서 실행 기록과 평가 결과 보기 (새 탭에서 열림)">
+    <a class="flow-dashboard-banner" href="/#/admin" target="_blank" rel="opener" aria-label="대시보드에서 실행 기록과 평가 결과 보기 (새 탭에서 열림)">
       <span class="flow-dashboard-banner-icon">${glyph('dashboard')}</span>
       <span class="flow-dashboard-banner-copy"><strong>대시보드에서 실행 기록과 평가 결과를 확인하세요</strong><span>모의지원 기록과 평가 결과를 한곳에서 살펴볼 수 있습니다.</span></span>
       <span class="flow-dashboard-banner-action">대시보드 열기 ${glyph('arrow')}</span>
