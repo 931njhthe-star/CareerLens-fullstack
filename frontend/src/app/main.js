@@ -585,15 +585,7 @@ async function onSession(nextSession, { deliveryObservation } = {}) {
     if (!current()) return;
     if (await continueGuestReport({ claimed, accountDestination, deliveryObservation })) return;
     if (claimed === 'expired') finishFlowEvent(deliveryObservation, { state: 'expired' });
-    const destination = accountDestination
-      ? returnAfterLogin
-      : claimed
-        ? claimed === 'expired'
-          ? 'resume'
-          : claimed === 'prepared'
-            ? practiceDestination(workspace.draft)
-            : 'result'
-        : returnAfterLogin || (workspace.draft.report ? 'result' : 'resume');
+    const destination = 'resume';
     returnAfterLogin = null;
     navigate(destination);
   } catch (error) {
