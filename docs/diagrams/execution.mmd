@@ -1,0 +1,31 @@
+sequenceDiagram
+    actor U as 회원
+    participant B as 브라우저
+    participant A as FastAPI
+    participant D as PostgreSQL
+    participant W as 통합 Worker
+    participant G as LangGraph
+    participant L as OpenAI API
+    participant F as 로컬 파일
+    U->>B: 이력서와 공고 선택 후 분석 요청
+    B->>A: 분석 접수 요청과 요청 식별값
+    A->>D: 인증·소유권·입력·중복 확인
+    Note over A: 접수 전 선택적 기업 보조정보 준비
+    A->>D: 작업과 입력 스냅샷 등록
+    D-->>A: run_id / queued
+    A-->>B: 202 분석 접수
+    W->>D: 대기 작업 한 건 점유
+    W->>L: 문서 구조화와 임베딩
+    W->>G: 원문·구조화 자료·근거로 실행
+    G->>L: 네 영역 병렬 평가와 전체 검토
+    Note over G,L: 문제 항목은 최대 한 라운드 재평가
+    L-->>G: 항목별 점수·판정·근거
+    G-->>W: 코드로 집계한 점수와 검토 상태
+    W->>D: 항목 결과와 보고서 저장
+    W->>F: 보고서·운영 기록 사본 쓰기
+    Note over W,F: 현재 보조 쓰기 실패가 run 실패로 전파될 수 있음
+    W->>D: 점유와 실행 상태를 확인하고 최종 상태 갱신
+    B->>A: 상태·결과 조회
+    A->>D: 본인 실행 상태와 저장 결과 확인
+    D-->>A: 상태·점수·보고서
+    A-->>B: 조회 가능한 결과 반환

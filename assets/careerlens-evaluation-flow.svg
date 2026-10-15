@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="1140" viewBox="0 0 1360 1140" role="img" aria-labelledby="title desc">
+<title id="title">네 영역을 함께 평가하고, 문제 항목만 다시 봅니다</title><desc id="desc">코드가 순서를 정하는 LangGraph 워크플로 · 4개 평가 영역 / 12개 항목 / 7개 업무 노드</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#7285a4" stroke-width="1.6"/></marker></defs>
+<rect width="1360" height="1140" rx="24" fill="#f7f9fd"/>
+<style>text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans CJK KR",sans-serif} .en{font-family:Consolas,monospace;letter-spacing:2px}</style>
+<text x="48" y="44" font-size="15" fill="#627699" font-weight="700" text-anchor="start" class="en">CAREERLENS  /  ARCHITECTURE</text>
+<text x="48" y="94" font-size="34" fill="#15243e" font-weight="700" text-anchor="start" class="">네 영역을 함께 평가하고, 문제 항목만 다시 봅니다</text>
+<text x="48" y="132" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">코드가 순서를 정하는 LangGraph 워크플로 · 4개 평가 영역 / 12개 항목 / 7개 업무 노드</text>
+<rect x="48" y="175" width="1264" height="102" rx="18" fill="#e9eefb" stroke="#d1daf0" stroke-width="1.5"/>
+<text x="70" y="211" font-size="15" fill="#52658c" font-weight="700" text-anchor="start" class="en">GRAPH 실행 전</text>
+<text x="70" y="248" font-size="26" fill="#15243e" font-weight="700" text-anchor="start" class="">인증·입력 확인 → 작업 접수 → 문서 구조화 → 관련 근거 준비</text>
+<path d="M 680 277 V 311" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 194 311 H 1166" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 194 311 V 350" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="48" y="350" width="292" height="174" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="66" y="371" width="5" height="24" rx="2" fill="#4966c6" stroke="none" stroke-width="1.5"/>
+<text x="84" y="389" font-size="15" fill="#4966c6" font-weight="700" text-anchor="start" class="en">A / 15%</text>
+<text x="70" y="427" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">이력서 완성도</text>
+<text x="70" y="461" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">경험 설명 · 성과 근거</text>
+<text x="70" y="490" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">구성·가독성</text>
+<path d="M 194 524 V 557" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 518 311 V 350" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="372" y="350" width="292" height="174" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="390" y="371" width="5" height="24" rx="2" fill="#526abb" stroke="none" stroke-width="1.5"/>
+<text x="408" y="389" font-size="15" fill="#526abb" font-weight="700" text-anchor="start" class="en">B / 30%</text>
+<text x="394" y="427" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">직무 적합도</text>
+<text x="394" y="461" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">핵심 기술 · 담당 업무</text>
+<text x="394" y="490" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">우대 역량</text>
+<path d="M 518 524 V 557" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 842 311 V 350" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="696" y="350" width="292" height="174" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="714" y="371" width="5" height="24" rx="2" fill="#3e837c" stroke="none" stroke-width="1.5"/>
+<text x="732" y="389" font-size="15" fill="#3e837c" font-weight="700" text-anchor="start" class="en">C / 35%</text>
+<text x="718" y="427" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">지원 자격 충족도</text>
+<text x="718" y="461" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">관련 경력 · 학력·전공</text>
+<text x="718" y="490" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">기타 필수조건</text>
+<path d="M 842 524 V 557" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 1166 311 V 350" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="1020" y="350" width="292" height="174" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="1038" y="371" width="5" height="24" rx="2" fill="#7661af" stroke="none" stroke-width="1.5"/>
+<text x="1056" y="389" font-size="15" fill="#7661af" font-weight="700" text-anchor="start" class="en">D / 20%</text>
+<text x="1042" y="427" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">실무 경쟁력</text>
+<text x="1042" y="461" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">업무 규모·난도 · 문제 해결</text>
+<text x="1042" y="490" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">역할·책임</text>
+<path d="M 1166 524 V 557" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 194 557 H 1166" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M 680 557 V 613" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="706" y="591" font-size="19" fill="#566681" font-weight="400" text-anchor="start" class="">항목 코드별 결과 취합</text>
+<rect x="48" y="613" width="302" height="146" rx="18" fill="#e9f6f2" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="66" y="634" width="5" height="24" rx="2" fill="#28775f" stroke="none" stroke-width="1.5"/>
+<text x="84" y="652" font-size="15" fill="#28775f" font-weight="700" text-anchor="start" class="en">CALCULATE</text>
+<text x="70" y="690" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">코드로 점수 계산</text>
+<text x="70" y="724" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">가중 멱평균 p = 0.5</text>
+<rect x="470" y="613" width="420" height="146" rx="18" fill="#f0f0ff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="488" y="634" width="5" height="24" rx="2" fill="#6859ba" stroke="none" stroke-width="1.5"/>
+<text x="506" y="652" font-size="15" fill="#6859ba" font-weight="700" text-anchor="start" class="en">GLOBAL CRITIC</text>
+<text x="492" y="690" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">전체 검토</text>
+<text x="492" y="724" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">누락·근거 충돌·과도한 해석 확인</text>
+<rect x="1010" y="613" width="302" height="146" rx="18" fill="#f0f0ff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="1028" y="634" width="5" height="24" rx="2" fill="#6859ba" stroke="none" stroke-width="1.5"/>
+<text x="1046" y="652" font-size="15" fill="#6859ba" font-weight="700" text-anchor="start" class="en">TARGETED RECHECK</text>
+<text x="1032" y="690" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">문제 항목 재평가</text>
+<text x="1032" y="724" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">지적한 항목만 한 라운드</text>
+<path d="M 470 682 H 350" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="410" y="655" font-size="16" fill="#566681" font-weight="400" text-anchor="middle" class="">계산 진행</text>
+<path d="M 890 682 H 1010" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="950" y="655" font-size="16" fill="#566681" font-weight="400" text-anchor="middle" class="">첫 지적</text>
+<path d="M 1161 759 V 811 H 680 V 759" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#arrow)"/>
+<text x="930" y="798" font-size="20" fill="#6859ba" font-weight="400" text-anchor="middle" class="">재평가 결과로 다시 검토</text>
+<text x="240" y="850" font-size="19" fill="#566681" font-weight="400" text-anchor="start" class="">검토 문제가 없거나 재평가 한도에 도달하면 계산합니다.</text>
+<path d="M 199 759 V 881" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="48" y="881" width="1264" height="112" rx="18" fill="#15243e" stroke="none" stroke-width="1.5"/>
+<text x="72" y="920" font-size="15" fill="#b4c4e5" font-weight="700" text-anchor="start" class="en">GRAPH 실행 후</text>
+<text x="72" y="960" font-size="25" fill="#ffffff" font-weight="700" text-anchor="start" class="">DB 결과·보고서 저장 → 로컬 사본 기록 → 실행 상태 확정 → 회원 조회</text>
+<text x="48" y="1032" font-size="21" fill="#566681" font-weight="400" text-anchor="start" class="">공고 요건 없음: 100점 · 요구 근거 없음: 0점 · 검토 한계가 남으면 partial 표시</text>
+<text x="48" y="1068" font-size="21" fill="#566681" font-weight="400" text-anchor="start" class="">문서 준비·보고서 저장은 7개 그래프 업무 노드 밖에서 수행합니다.</text>
+<text x="48" y="1116" font-size="15" fill="#566681" font-weight="400" text-anchor="start" class="">구현 기준 2026-10-14 · caccade  |  CareerLens Project 2</text>
+</svg>

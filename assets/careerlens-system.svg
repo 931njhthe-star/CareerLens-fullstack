@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="900" viewBox="0 0 1360 900" role="img" aria-labelledby="title desc">
+<title id="title">요청에서 보고서까지, 연결되는 구성</title><desc id="desc">사용자 화면 · 처리 책임 · 영속 데이터 · 외부 서비스를 한눈에 봅니다.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#7285a4" stroke-width="1.6"/></marker></defs>
+<rect width="1360" height="900" rx="24" fill="#f7f9fd"/>
+<style>text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans CJK KR",sans-serif} .en{font-family:Consolas,monospace;letter-spacing:2px}</style>
+<text x="48" y="44" font-size="15" fill="#627699" font-weight="700" text-anchor="start" class="en">CAREERLENS  /  ARCHITECTURE</text>
+<text x="48" y="94" font-size="34" fill="#15243e" font-weight="700" text-anchor="start" class="">요청에서 보고서까지, 연결되는 구성</text>
+<text x="48" y="132" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">사용자 화면 · 처리 책임 · 영속 데이터 · 외부 서비스를 한눈에 봅니다.</text>
+<rect x="350" y="178" width="600" height="425" rx="22" fill="#edf1fb" stroke="#cbd7ee" stroke-width="1.5"/>
+<text x="374" y="210" font-size="19" fill="#52658c" font-weight="700" text-anchor="start" class="">하나의 Uvicorn 프로세스</text>
+<rect x="48" y="248" width="250" height="177" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="66" y="269" width="5" height="24" rx="2" fill="#4b61c9" stroke="none" stroke-width="1.5"/>
+<text x="84" y="287" font-size="15" fill="#4b61c9" font-weight="700" text-anchor="start" class="en">BROWSER</text>
+<text x="70" y="325" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">사용자 화면</text>
+<text x="70" y="359" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">이력서·공고 선택</text>
+<text x="70" y="388" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">상태·저장 보고서 조회</text>
+<rect x="380" y="240" width="200" height="143" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="398" y="261" width="5" height="24" rx="2" fill="#4b61c9" stroke="none" stroke-width="1.5"/>
+<text x="416" y="279" font-size="15" fill="#4b61c9" font-weight="700" text-anchor="start" class="en">API</text>
+<text x="402" y="317" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">FastAPI</text>
+<text x="402" y="351" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">인증·접수·조회</text>
+<rect x="380" y="421" width="200" height="143" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="398" y="442" width="5" height="24" rx="2" fill="#4b61c9" stroke="none" stroke-width="1.5"/>
+<text x="416" y="460" font-size="15" fill="#4b61c9" font-weight="700" text-anchor="start" class="en">UI</text>
+<text x="402" y="498" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">Flask</text>
+<text x="402" y="532" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">화면·정적 자료</text>
+<rect x="640" y="240" width="280" height="246" rx="18" fill="#f0f0ff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="658" y="261" width="5" height="24" rx="2" fill="#6859ba" stroke="none" stroke-width="1.5"/>
+<text x="676" y="279" font-size="15" fill="#6859ba" font-weight="700" text-anchor="start" class="en">WORKER</text>
+<text x="662" y="317" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">분석 Worker</text>
+<text x="662" y="351" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">DB 작업 한 건 점유</text>
+<text x="662" y="380" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">자료 준비 → 평가</text>
+<text x="662" y="409" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">검토 → 계산·저장</text>
+<rect x="1000" y="240" width="312" height="181" rx="18" fill="#f0f0ff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="1018" y="261" width="5" height="24" rx="2" fill="#6859ba" stroke="none" stroke-width="1.5"/>
+<text x="1036" y="279" font-size="15" fill="#6859ba" font-weight="700" text-anchor="start" class="en">MODEL API</text>
+<text x="1022" y="317" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">OpenAI</text>
+<text x="1022" y="351" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">구조화·임베딩</text>
+<text x="1022" y="380" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">항목 평가·전체 검토</text>
+<rect x="1000" y="475" width="312" height="152" rx="18" fill="#ffffff" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="1018" y="496" width="5" height="24" rx="2" fill="#627699" stroke="none" stroke-width="1.5"/>
+<text x="1036" y="514" font-size="15" fill="#627699" font-weight="700" text-anchor="start" class="en">OPTIONAL</text>
+<text x="1022" y="552" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">Yahoo Finance</text>
+<text x="1022" y="586" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">기업 보조정보 조회</text>
+<rect x="380" y="678" width="570" height="152" rx="18" fill="#e9f6f2" stroke="#dce4f0" stroke-width="1.5"/>
+<rect x="398" y="699" width="5" height="24" rx="2" fill="#28775f" stroke="none" stroke-width="1.5"/>
+<text x="416" y="717" font-size="15" fill="#28775f" font-weight="700" text-anchor="start" class="en">PERSISTENT DATA</text>
+<text x="402" y="755" font-size="25" fill="#15243e" font-weight="700" text-anchor="start" class="">PostgreSQL + pgvector</text>
+<text x="402" y="789" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">계정·원문·작업·결과·보고서</text>
+<text x="402" y="818" font-size="20" fill="#566681" font-weight="400" text-anchor="start" class="">근거 청크·벡터 / 체크포인트 전용 스키마</text>
+<path d="M 298 310 H 380" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="306" y="291" font-size="13" fill="#627699" font-weight="400" text-anchor="start" class="">HTTPS</text>
+<path d="M 480 383 V 421" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="492" y="410" font-size="14" fill="#627699" font-weight="400" text-anchor="start" class="">WSGI</text>
+<path d="M 580 290 H 640" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="585" y="272" font-size="14" fill="#627699" font-weight="400" text-anchor="start" class="">시작</text>
+<path d="M 920 320 H 1000" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 550 383 V 402 H 610 V 678" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="615" y="647" font-size="16" fill="#627699" font-weight="400" text-anchor="start" class="">등록·조회</text>
+<path d="M 780 486 V 678" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="792" y="647" font-size="16" fill="#627699" font-weight="400" text-anchor="start" class="">작업·결과·복구 상태</text>
+<path d="M 610 551 H 1000" fill="none" stroke="#7285a4" stroke-width="2.4" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#arrow)"/>
+<text x="695" y="540" font-size="16" fill="#627699" font-weight="400" text-anchor="start" class="">접수 전 선택 조회</text>
+<text x="48" y="876" font-size="15" fill="#566681" font-weight="400" text-anchor="start" class="">구현 기준 2026-10-14 · caccade  |  CareerLens Project 2</text>
+</svg>

@@ -1,0 +1,15 @@
+flowchart TD
+    START["그래프 시작: 원문 / 구조화 자료 / 근거"] --> A["이력서 완성도 · A1-A3"]
+    START --> B["직무 적합도 · B1-B3"]
+    START --> C["지원 자격 · C1-C3"]
+    START --> D["실무 경쟁력 · D1-D3"]
+    A --> CRIT["전체 검토"]
+    B --> CRIT
+    C --> CRIT
+    D --> CRIT
+    CRIT --> CHECK{"문제 항목 있고 전체 재평가 전?"}
+    CHECK -->|"예"| RE["지적 항목만 재평가 · 최대 한 라운드"]
+    RE --> CRIT
+    CHECK -->|"아니오"| CALC["두 단계 가중 멱평균 p=0.5"]
+    CALC --> END["숫자 점수 + passed / partial"]
+    Note["START/END 제외 7개 업무 노드; 준비와 저장은 그래프 밖"]

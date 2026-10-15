@@ -1,0 +1,13 @@
+flowchart TB
+    B["브라우저"] --> A["FastAPI: 인증 / 분석 접수 / 조회"]
+    A -->|"WSGI 마운트"| UI["Flask: 화면 / 정적 자료"]
+    A -->|"lifespan에서 시작"| W["분석 Worker"]
+    W --> P["문서 구조화 / 근거 준비"] --> G["LangGraph: 병렬 평가 / 검토 / 계산"] --> S["결과 / 보고서 저장"]
+    A <-->|"계정 / 문서 / 작업 / 상태 / 결과"| D[("PostgreSQL + pgvector")]
+    W <-->|"작업 점유 / heartbeat / 체크포인트"| D
+    P <-->|"청크 / 벡터"| D
+    S --> D
+    P <-->|"구조화 / 임베딩"| L["OpenAI API"]
+    G <-->|"평가 / 검토"| L
+    A -.->|"선택적 기업정보"| F["Yahoo Finance"]
+

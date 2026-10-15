@@ -1,0 +1,12 @@
+flowchart TB
+    B["사용자 브라우저"] -->|"HTTPS"| R
+    subgraph R["Render Web Service: agentservice-team3 / 단일 Uvicorn 프로세스"]
+        APP["app.main:app"] --> API["FastAPI"]
+        APP -->|"WSGI 마운트"| UI["Flask"]
+        APP -->|"lifespan에서 태스크 시작"| W["분석 Worker / LangGraph"]
+    end
+    API <-->|"DATABASE_URL"| DB[("agent-db-team3: PostgreSQL + pgvector")]
+    W <-->|"작업 / 결과 / 체크포인트"| DB
+    W -->|"구조화 / 임베딩 / 평가"| AI["OpenAI API"]
+    API -->|"선택적 기업정보"| F["Yahoo Finance"]
+
