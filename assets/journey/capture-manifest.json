@@ -1,0 +1,476 @@
+{
+  "date": "2026-10-15",
+  "timezone": "Asia/Seoul",
+  "service": "https://agentservice-team3.onrender.com/",
+  "repository": "encore-ai-campus/aio-02-p2-team3",
+  "capture_method": "Actual Chrome browser page screenshots recorded sequentially through CUA; no synthetic UI or generated events added by capture script.",
+  "analysis": {
+    "sample": "최예린 · RAG 개발자 · 서비스 가상 이력서 1781자",
+    "job": "NAVER · RAG 지식 파이프라인 엔지니어 · 가상 공고",
+    "new_requests": 1,
+    "result": "종합70점; 일부 확인 필요; 보고서 자동 저장",
+    "run_created_kst": "2026-10-15 17:48",
+    "report_displayed_kst": "2026-10-15 17:50",
+    "server_total_seconds": 79.53
+  },
+  "videos": [
+    {
+      "file": "analysis-recording.mp4",
+      "preview": "analysis-recording.gif",
+      "frames": 40,
+      "edited_frame_duration_seconds": 0.3,
+      "source_from": "2026-10-15T08:48:41.641Z",
+      "source_to": "2026-10-15T08:51:03.615Z",
+      "notice": "가상 이력서·공고 사용 / 로딩과 결과 구간 발췌 · 대기 시간 생략"
+    },
+    {
+      "file": "flow-demo.mp4",
+      "preview": "flow-demo.gif",
+      "frames": 35,
+      "edited_frame_duration_seconds": 0.35,
+      "source_from": "2026-10-15T08:53:09.793Z",
+      "source_to": "2026-10-15T08:53:21.833Z",
+      "notice": "가상 이벤트 모드 / 실제 분석 요청이 아닌 시연 데이터 · 연속 화면 기록"
+    }
+  ],
+  "routes": {
+    "resume": "/#/resume",
+    "role": "/#/desired-role",
+    "job": "/#/opportunities",
+    "report": "/#/result",
+    "flow_demo": "/?view=flow",
+    "dashboard": "/#/admin"
+  },
+  "observations": [
+    "Direct flow URL without stream allows only simulated events. This is not evidence that linked real-time mode is disabled.",
+    "Flow window opened from dashboard link with stream parameter eventually displayed 원래 작업 창 연결됨. Its screenshot API timed out twice; no live dashboard flow video included.",
+    "Clicking dashboard-open from authenticated flow UI opened a new dashboard window with 회원 님 and current-account execution list without asking for login.",
+    "Opening a separate fresh direct URL tab initially asked for login; this is distinct from the dashboard button popup flow."
+  ],
+  "source_frames": [
+    {
+      "file": "frame-0000.jpg",
+      "time": "2026-10-15T08:48:41.641Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0001.jpg",
+      "time": "2026-10-15T08:48:42.066Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0002.jpg",
+      "time": "2026-10-15T08:48:42.414Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0003.jpg",
+      "time": "2026-10-15T08:48:42.765Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0004.jpg",
+      "time": "2026-10-15T08:48:43.178Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0005.jpg",
+      "time": "2026-10-15T08:48:43.577Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0006.jpg",
+      "time": "2026-10-15T08:48:44.128Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0007.jpg",
+      "time": "2026-10-15T08:48:44.541Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0008.jpg",
+      "time": "2026-10-15T08:48:44.889Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0009.jpg",
+      "time": "2026-10-15T08:48:45.345Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0010.jpg",
+      "time": "2026-10-15T08:48:45.836Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0011.jpg",
+      "time": "2026-10-15T08:48:46.187Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0012.jpg",
+      "time": "2026-10-15T08:48:46.57Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0013.jpg",
+      "time": "2026-10-15T08:48:47.177Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0014.jpg",
+      "time": "2026-10-15T08:48:48.079Z",
+      "label": "analysis-start"
+    },
+    {
+      "file": "frame-0015.jpg",
+      "time": "2026-10-15T08:50:20.594Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0016.jpg",
+      "time": "2026-10-15T08:50:21.067Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0017.jpg",
+      "time": "2026-10-15T08:50:21.403Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0018.jpg",
+      "time": "2026-10-15T08:50:21.832Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0019.jpg",
+      "time": "2026-10-15T08:50:22.138Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0020.jpg",
+      "time": "2026-10-15T08:50:22.457Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0021.jpg",
+      "time": "2026-10-15T08:50:22.809Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0022.jpg",
+      "time": "2026-10-15T08:50:23.112Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0023.jpg",
+      "time": "2026-10-15T08:50:23.495Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0024.jpg",
+      "time": "2026-10-15T08:50:23.877Z",
+      "label": "analysis-progress"
+    },
+    {
+      "file": "frame-0025.jpg",
+      "time": "2026-10-15T08:50:58.8Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0026.jpg",
+      "time": "2026-10-15T08:50:59.14Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0027.jpg",
+      "time": "2026-10-15T08:50:59.506Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0028.jpg",
+      "time": "2026-10-15T08:50:59.904Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0029.jpg",
+      "time": "2026-10-15T08:51:00.24Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0030.jpg",
+      "time": "2026-10-15T08:51:00.651Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0031.jpg",
+      "time": "2026-10-15T08:51:00.984Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0032.jpg",
+      "time": "2026-10-15T08:51:01.35Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0033.jpg",
+      "time": "2026-10-15T08:51:01.7Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0034.jpg",
+      "time": "2026-10-15T08:51:02.038Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0035.jpg",
+      "time": "2026-10-15T08:51:02.342Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0036.jpg",
+      "time": "2026-10-15T08:51:02.674Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0037.jpg",
+      "time": "2026-10-15T08:51:03.009Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0038.jpg",
+      "time": "2026-10-15T08:51:03.309Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0039.jpg",
+      "time": "2026-10-15T08:51:03.615Z",
+      "label": "report-result"
+    },
+    {
+      "file": "frame-0040.jpg",
+      "time": "2026-10-15T08:53:09.793Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0041.jpg",
+      "time": "2026-10-15T08:53:10.215Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0042.jpg",
+      "time": "2026-10-15T08:53:10.533Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0043.jpg",
+      "time": "2026-10-15T08:53:10.884Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0044.jpg",
+      "time": "2026-10-15T08:53:11.203Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0045.jpg",
+      "time": "2026-10-15T08:53:11.6Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0046.jpg",
+      "time": "2026-10-15T08:53:11.921Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0047.jpg",
+      "time": "2026-10-15T08:53:12.257Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0048.jpg",
+      "time": "2026-10-15T08:53:12.576Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0049.jpg",
+      "time": "2026-10-15T08:53:12.972Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0050.jpg",
+      "time": "2026-10-15T08:53:13.401Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0051.jpg",
+      "time": "2026-10-15T08:53:13.768Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0052.jpg",
+      "time": "2026-10-15T08:53:14.166Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0053.jpg",
+      "time": "2026-10-15T08:53:14.745Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0054.jpg",
+      "time": "2026-10-15T08:53:15.109Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0055.jpg",
+      "time": "2026-10-15T08:53:15.429Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0056.jpg",
+      "time": "2026-10-15T08:53:15.841Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0057.jpg",
+      "time": "2026-10-15T08:53:16.225Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0058.jpg",
+      "time": "2026-10-15T08:53:16.589Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0059.jpg",
+      "time": "2026-10-15T08:53:16.894Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0060.jpg",
+      "time": "2026-10-15T08:53:17.201Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0061.jpg",
+      "time": "2026-10-15T08:53:17.506Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0062.jpg",
+      "time": "2026-10-15T08:53:17.81Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0063.jpg",
+      "time": "2026-10-15T08:53:18.177Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0064.jpg",
+      "time": "2026-10-15T08:53:18.604Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0065.jpg",
+      "time": "2026-10-15T08:53:18.954Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0066.jpg",
+      "time": "2026-10-15T08:53:19.27Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0067.jpg",
+      "time": "2026-10-15T08:53:19.577Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0068.jpg",
+      "time": "2026-10-15T08:53:19.896Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0069.jpg",
+      "time": "2026-10-15T08:53:20.23Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0070.jpg",
+      "time": "2026-10-15T08:53:20.581Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0071.jpg",
+      "time": "2026-10-15T08:53:20.901Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0072.jpg",
+      "time": "2026-10-15T08:53:21.208Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0073.jpg",
+      "time": "2026-10-15T08:53:21.528Z",
+      "label": "flow-simulated-events"
+    },
+    {
+      "file": "frame-0074.jpg",
+      "time": "2026-10-15T08:53:21.833Z",
+      "label": "flow-simulated-events"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "01-resume.jpg",
+      "captured": "2026-10-15",
+      "kind": "actual service UI with fictional sample"
+    },
+    {
+      "file": "02-desired-role.jpg",
+      "captured": "2026-10-15",
+      "kind": "actual service UI with fictional sample"
+    },
+    {
+      "file": "03-jobs.jpg",
+      "captured": "2026-10-15",
+      "kind": "actual service UI with fictional sample"
+    },
+    {
+      "file": "04-analysis-loading.jpg",
+      "captured": "2026-10-15",
+      "kind": "actual service UI with fictional sample"
+    },
+    {
+      "file": "05-report.jpg",
+      "captured": "2026-10-15",
+      "kind": "actual service UI with fictional sample"
+    },
+    {
+      "file": "06-flow-map.jpg",
+      "captured": "2026-10-15",
+      "kind": "simulated-event UI"
+    },
+    {
+      "file": "06-flow-overview.jpg",
+      "captured": "2026-10-15",
+      "kind": "simulated-event UI"
+    },
+    {
+      "file": "07-dashboard.jpg",
+      "captured": "2026-10-15",
+      "kind": "actual service UI with fictional sample"
+    },
+    {
+      "file": "08-report-evidence.jpg",
+      "captured": "2026-10-15",
+      "kind": "actual service UI with fictional sample"
+    }
+  ],
+  "publishing": "Capture-time provenance: produced locally without publication. Packaged later for the team README with user authorization.",
+  "live_flow_capture_status": "Incomplete: linked live-flow DOM showed connection, but popup screenshot timed out twice. Native Computer Use fallback was stopped because it could not confidently determine the current browser URL for policy enforcement. No further UI actions or second analysis performed."
+}

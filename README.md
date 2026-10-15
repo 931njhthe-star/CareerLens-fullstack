@@ -16,7 +16,7 @@
 
 이 문서는 배포 담당자의 **`encore-ai-campus/aio-02-p2-team3`** 코드와 팀 배포 설정인 **`blueprints/team3.yaml`**을 기준으로 작성했습니다. 개인 배포 환경의 설정은 포함하지 않습니다.
 
-[서비스 소개](#service) · [프론트엔드](#frontend) · [백엔드](#backend) · [에이전트](#agent) · [점수 계산](#scoring) · [Render 배포](#deployment) · [팀원 회고](#retrospectives) · [참고 자료](#references)
+[서비스 소개](#service) · [사용자 이해](#people) · [사용자 여정](#journeys) · [작동 영상](#working-video) · [프론트엔드](#frontend) · [백엔드](#backend) · [에이전트](#agent) · [점수 계산](#scoring) · [Render 배포](#deployment) · [팀원 회고](#retrospectives) · [참고 자료](#references)
 
 <a id="service"></a>
 
@@ -35,36 +35,132 @@
 
 ## 함께 만든 사람들
 
-| 이름 | 역할 |
-| --- | --- |
-| **노지훈** | Core Backend Engineer |
-| **신영석** | Frontend Software Architect |
-| **백승주** | Backend/Data Engineer |
-| **성관현** | Project Manager |
+| 이름 | 역할 | 담당 내용 | GitHub |
+| --- | --- | --- | --- |
+| **노지훈** | Core Backend Engineer | AI 에이전트 평가 흐름, 점수 산정·판정 기준 개선, 백엔드·DB 연동 및 서비스 통합·배포 | [hun0425](https://github.com/hun0425) |
+| **신영석** | Frontend Software Architect | 프론트엔드 UI·화면 설계, 배포 설정, 대시보드 UI, 발표 전반부 준비, 노션 문서 지원 및 통합 저장소 README 작성 | [WithAndWithout0094](https://github.com/WithAndWithout0094) |
+| **백승주** | Backend/Data Engineer | DB 설계·연동과 데이터 처리, 팀 일정 관리, 기획서·PRD·평가 기준 등 문서 6종 보완, 가상 이력서 자료 제작 | [seungjuubaek-b](https://github.com/seungjuubaek-b) |
+| **성관현** | Project Manager | 의견 조율·역할 배분·산출물 관리, 아키텍처 설계서와 평가 기준별 검수 도해 정리, 실행 구조·배포 조건 확인 | [tsurien](https://github.com/tsurien) |
 
-## 한눈에 보는 이용 순서
 
-```mermaid
-flowchart LR
-    HOME[홈 소개] --> RESUME[이력서 준비]
-    RESUME --> ROLE[희망 직무 선택]
-    ROLE --> JOB[공고 목록·상세]
-    JOB --> MEMBER[로그인한 회원의 분석 요청]
-    MEMBER --> REPORT[결과·저장 보고서]
-    JOB -.-> GUEST[비회원은 공고 탐색까지]
-```
+<a id="people"></a>
 
-회원과 비회원 모두 **이력서 준비 → 희망 직무 선택 → 채용공고 확인** 순서로 이용할 수 있습니다. 현재 팀 통합 구성에서 분석과 보고서 조회는 **로그인한 회원의 경로**로 제공합니다. 비회원은 오른쪽 상단에서 로그인하거나 가입한 뒤 이용합니다.
+## 사용자 이해 · 누구의 어떤 질문을 돕는가
 
-아래 화면은 **2026-10-15 팀 배포 서비스에서 직접 캡처**하고 기능 설명을 덧붙였습니다. 공개 가상 이력서 CV-006을 사용했으며, 로그인·회원가입의 입력값은 가렸습니다. 이용 흐름의 내장 시연 화면은 가상 데이터로 표시했습니다. [페이지별 전체 화면 안내](docs/screenshots.md)
+CareerLens는 지원자가 자신의 경험을 설명하는 관점과, 서비스 운영·평가 담당자가 결과의 근거를 이해하는 관점을 함께 살폈습니다.
+
+**두 페르소나와 공감지도는 설계용 가상 사례입니다. 실제 사용자 인터뷰나 정량 조사 결과가 아닙니다.** 눈 심벌을 활용한 일러스트와 공감지도는 CareerLens의 남색·인디고·흰색에 맞춰 AI로 제작했습니다.
+
+### 일반 사용자 · 지원할 공고와 내 경험을 연결하기
+
+가상 페르소나 **이지원 · 취업준비자**의 질문은 “이 경험이 선택한 직무에 맞을까?”입니다. 공고의 요구와 자신의 경험을 연결하고, 이력서에서 보완할 내용을 찾는 데 초점을 맞췄습니다.
+
+![취업준비자 가상 페르소나와 생각·감정·행동·필요 공감지도](assets/user-understanding/job-seeker.png)
+
+### 이해관계자 · 결과가 만들어진 과정을 설명하기
+
+가상 페르소나 **김도윤 · 서비스 운영·평가 담당**은 처리 상태와 판단 근거를 확인하려는 사람입니다. 채용사의 실제 HR 권한이나 관리자 전용 전체 사용자 조회 기능을 가정하지 않습니다.
+
+![서비스 운영·평가 담당 가상 페르소나와 공감지도 · 시연과 본인 기록으로 범위 제한](assets/user-understanding/stakeholder.png)
+
+<a id="journeys"></a>
+
+## 두 관점으로 읽는 사용자 여정
+
+아래는 **2026-10-15 팀 배포 서비스**에서 촬영한 실제 화면을 단계별 질문과 연결한 안내입니다. 공개 가상 이력서와 교육용 모의공고를 사용했습니다. 앞의 눈 심벌 일러스트와 달리, 아래 서비스 화면은 AI로 생성한 UI가 아닙니다.
+
+### 지원자는 무엇을 얻는가
+
+이력서를 준비한 뒤 공고 하나를 선택하고, 평가 이유를 읽어 보완할 내용을 찾습니다.
+
+**01. 비교할 경험을 준비한다**
+
+로그인 후 이력서 본문을 준비합니다. 공개 가상 이력서로도 분석 과정을 체험할 수 있습니다.
+
+![비교할 경험을 준비한다 · 팀 서비스 실제 화면](assets/journey/01-resume.jpg)
+
+**02. 관심 직무를 정한다**
+
+관심 있는 직무를 선택해 어떤 분야의 공고를 살펴볼지 정합니다. 선택한 이력서는 다음 단계로 이어집니다.
+
+![관심 직무를 정한다 · 팀 서비스 실제 화면](assets/journey/02-desired-role.jpg)
+
+**03. 기준이 될 공고를 고른다**
+
+희망 직무와 공고의 업무·지원 요건을 살펴보고, 이력서와 비교할 모의공고를 선택합니다.
+
+![기준이 될 공고를 고른다 · 팀 서비스 실제 화면](assets/journey/03-jobs.jpg)
+
+**04. 현재 처리 상태를 확인한다**
+
+분석을 요청하면 처리 단계를 확인하며 기다립니다. 표시되는 진행률은 평가 점수와 다릅니다.
+
+![현재 처리 상태를 확인한다 · 팀 서비스 실제 화면](assets/journey/04-analysis-loading.jpg)
+
+**05. 판단 이유를 읽고 보완한다**
+
+네 평가 영역의 점수와 판정, 원문 근거와 보완 방향을 함께 읽습니다. 점수는 합격 확률이나 지원자 순위가 아닙니다.
+
+![판단 이유를 읽고 보완한다 · 팀 서비스 실제 화면](assets/journey/05-report.jpg)
+
+### 운영·평가 담당자는 어떻게 살펴보는가
+
+처리 흐름과 저장된 기록을 함께 읽고, 결과를 설명할 수 있는 단서를 찾습니다.
+
+**현재 확인 범위:** 대시보드의 ‘이 작업창 이용 흐름 새 창 열기’에서 연결한 창은 현재 작업의 흐름을 관찰합니다. 대시보드는 로그인한 본인의 실행 기록을 확인합니다. 관리자 전용 전체 사용자 조회나 채용사의 HR 판단 기능을 뜻하지 않습니다.
+
+**01. 연결 방법과 시연을 구분한다**
+
+작업창에서 이용 흐름 새 창을 열어 ‘원래 작업 창 연결됨’을 확인하면 실시간 관찰이 가능합니다. 아래 사진은 별도의 가상 이벤트 시연이며 실시간 분석 화면은 아닙니다.
+
+![연결 방법과 시연을 구분한다 · 팀 서비스의 가상 이벤트 시연](assets/journey/06-flow-map.jpg)
+
+**02. 기록으로 범위를 좁힌다**
+
+대시보드를 별도 창으로 열고 본인 실행의 상태와 단계·시간 등 기록된 정보를 확인합니다. 수집되지 않은 값은 추정하지 않습니다.
+
+![기록으로 범위를 좁힌다 · 팀 서비스 실제 화면](assets/journey/07-dashboard.jpg)
+
+**03. 보고서와 근거를 대조한다**
+
+검토 상태와 자격 판정, 숫자 점수를 나눠 읽고 결과의 이유와 원문 근거를 살펴봅니다.
+
+![보고서와 근거를 대조한다 · 팀 서비스 실제 화면](assets/journey/08-report-evidence.jpg)
+
+
+<a id="working-video"></a>
+
+## 짧은 작동 영상
+
+**실제 분석과 이용 흐름의 가상 시연을 서로 다른 영상으로 구분했습니다. 두 영상은 동일 실행에 연결된 실시간 기록이 아닙니다.** 실시간 관찰은 작업창의 **이 작업창 이용 흐름 새 창 열기**에서 연결하고 **원래 작업 창 연결됨**을 확인해 사용합니다. 주소를 직접 연 미연결 창과 구분합니다.
+
+이번 자료에는 **실제 분석 중 실시간 이용 흐름까지 함께 움직이는 영상은 포함하지 못했습니다.** 정상 연결 상태는 확인했으며, 아래 이용 흐름 영상은 별도의 가상 이벤트 UI 시연입니다.
+
+### 실제 분석 · 로딩에서 저장 보고서까지
+
+공개 가상 이력서로 분석을 한 번 실행해 로딩과 최종 보고서를 기록했습니다. 실제 화면 40프레임을 약 12초로 구성하고 긴 대기 구간을 생략했습니다. 끊김 없는 화면 녹화나 처리 속도 측정 자료가 아닙니다.
+
+[![실제 분석 로딩과 최종 보고서 미리보기](assets/journey/analysis-recording.gif)](assets/journey/analysis-recording.mp4)
+
+[실제 분석 영상 MP4 열기](assets/journey/analysis-recording.mp4)
+
+### 이용 흐름 · 가상 이벤트 UI 시연
+
+이용 흐름의 내장 시연 기능으로 단계·이벤트·상태가 바뀌는 모습을 담았습니다. 표시된 시간·로그·진행률은 가상 값이며 실제 분석 요청·서버 성능의 증거가 아닙니다.
+
+[![이용 흐름 가상 이벤트 UI 작동 미리보기](assets/journey/flow-demo.gif)](assets/journey/flow-demo.mp4)
+
+[이용 흐름 시연 MP4 열기](assets/journey/flow-demo.mp4)
+
+[로컬 보기용 HTML 원본](index.html) · [촬영과 편집 기준](docs/journey-media.md)
 
 ---
 
 <a id="frontend"></a>
 
-## 프론트엔드 · 사용자가 이해하기 쉬운 화면
+## 프론트엔드 · 화면과 분석 API 연결
 
-**자료를 준비하고, 공고를 선택하고, 결과를 읽는 과정이 자연스럽게 이어지도록 구성했습니다.** 각 화면에서 현재 상태와 다음 행동을 함께 안내합니다.
+Flask가 제공하는 HTML·CSS·JavaScript 화면을 분석 API와 연결하고, 비동기 요청과 상태 조회로 분석 작업을 이어갑니다.
 
 ### 사용한 서버와 도구
 
@@ -79,188 +175,15 @@ flowchart LR
 | **BroadcastChannel** | 본 화면과 이용 흐름 팝업 사이의 이벤트 공유 | 같은 출처의 두 창에서 선택한 작업의 흐름을 함께 보여줄 수 있음 |
 | **해시 기반 화면 전환** | `#/resume`, `#/result` 등 페이지 이동 | 하나의 앱 안에서 단계별 주소를 구분하고 화면 간 이동을 연결할 수 있음 |
 
-Flask는 브라우저에 화면을 제공하는 서버입니다. 현재 통합 실행 구성에서는 **FastAPI에 Flask 앱을 연결**해 화면과 분석 API를 함께 제공합니다. [화면 서버 코드](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/frontend/server.py) · [API 연결 코드](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/frontend/src/shared/api/client.js)
+Flask는 브라우저에 화면을 제공하는 서버입니다. 현재 통합 실행 구성에서는 **FastAPI에 Flask 앱을 연결**해 화면과 분석 API를 함께 제공합니다. [화면 서버 코드](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/frontend/server.py) · [API 연결 코드](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/frontend/src/shared/api/client.js)
 
-### 01. 홈 · 짧은 소개로 시작
+### 새 창 연계와 인증 상태
 
-![팀 소개 화면과 기능 설명](assets/screenshots/01-intro.png)
+이용 흐름 새 창에서 **`대시보드 열기`를 누르면 기존 이용 흐름 창을 유지하면서 대시보드를 별도 창으로 엽니다.** 로그인한 사용자는 인증 상태를 이어서 자신의 실행 기록을 확인하도록 연결했습니다. 브라우저 설정에 따라 새 탭으로 표시될 수 있습니다.
 
-| 화면 요소 | 기능 | 다음 이동 |
-| --- | --- | --- |
-| 소개 애니메이션 | 서비스의 첫인상을 전달하고 자동으로 다음 화면 안내 | 이력서 첨부 페이지 |
-| 건너뛰기 | 소개를 기다리지 않고 시작 | 이력서 첨부 페이지 |
-| 오른쪽 상단 로그인 | 원하는 시점에 회원 이용 선택 | 로그인·회원가입 |
-
-로그인하지 않아도 이력서 첨부와 공고 탐색을 시작할 수 있습니다.
-
-### 로그인과 회원가입
-
-이메일 계정으로 회원 작업 공간에 들어갑니다. 가입 화면에서는 이름·이메일·비밀번호를 입력하며, 아래 이미지의 입력값은 공개용으로 가렸습니다.
-
-![팀 이메일 로그인 화면과 기능 설명](assets/screenshots/02-login.png)
-
-<details>
-<summary>회원가입 화면 보기</summary>
-
-![팀 이메일 회원가입 화면과 기능 설명](assets/screenshots/03-signup.png)
-
-</details>
-
-### 02. 이력서 · 비교할 자료 준비
-
-![팀 회원 이력서 준비 화면과 기능 설명](assets/screenshots/04-resume.png)
-
-| 화면 요소 | 기능 | 사용자가 확인하는 결과 |
-| --- | --- | --- |
-| 파일 첨부 | UTF-8 Markdown(`.md`) 이력서 선택 | 파일명과 첨부 상태 |
-| 본문 편집 · 회원 | 직접 입력하거나 불러온 내용 수정 | 분석에 사용할 이력서 본문 |
-| 가상 이력서 체험 · 회원 | 준비된 예시 이력서 선택 | 내 문서 없이도 서비스 체험 |
-| 다음 단계 버튼 | 준비한 이력서로 이동 | 희망 직무 선택 화면 |
-
-다음 단계 버튼은 회원에게 **`채용공고로 계속`**, 비회원에게 **`첨부한 이력서로 계속`**으로 표시됩니다. 현재 첨부 UI는 **UTF-8 `.md`, 최대 10 MiB**를 기준으로 검사하며, 조건을 충족하지 않으면 이유를 안내합니다.
-
-<details>
-<summary>본문 편집과 비회원 준비 화면 보기</summary>
-
-![공개 가상 이력서 본문 편집 화면](assets/screenshots/05-resume-editor.png)
-
-![비회원 준비 화면과 현재 실분석 제한](assets/screenshots/22-guest-resume.png)
-
-</details>
-
-### 03. 희망 직무 · 관심 공고의 범위 선택
-
-![팀 희망 직무 선택 화면과 기능 설명](assets/screenshots/06-desired-role.png)
-
-| 화면 요소 | 기능 | 다음 이동 |
-| --- | --- | --- |
-| 희망 직무 목록·직접 입력 | 관심 직무 선택 또는 입력 | 선택한 직무 기준으로 탐색 준비 |
-| 첨부 이력서 안내 | 사용할 이력서 확인 | 필요하면 이전 화면에서 수정 |
-| `관련 채용공고 보기` | 직무에 맞는 공고 조회 | 공고 목록·상세 화면 |
-
-### 04. 채용공고 · 목록과 상세를 함께 확인
-
-![팀 모의공고 목록과 상세 화면](assets/screenshots/07-job-list.png)
-
-<details>
-<summary>선택한 공고 상세 보기</summary>
-
-![선택한 공고의 조건과 분석 진입 버튼](assets/screenshots/08-job-detail.png)
-
-</details>
-
-| 화면 요소 | 기능 | 사용자가 확인하는 결과 |
-| --- | --- | --- |
-| 공고 목록 | 회사·직무·경력·기술 등을 보고 선택 | 선택한 공고의 상세 내용 |
-| 공고 상세 | 담당 업무와 지원 요건 확인 | 이력서와 비교할 조건 |
-| 탐색 범위·이전·다음 | 공고를 바꾸며 비교 | 희망하는 분석 대상 선택 |
-| `모의지원 결과 확인` · 회원 | 선택한 이력서와 공고로 분석 시작 | 분석 진행 화면과 이용 흐름 팝업 |
-
-### 05. 분석 진행 · 현재 상태를 함께 안내
-
-![실제 팀 분석 진행 화면과 진행률 설명](assets/screenshots/09-analysis-progress.png)
-
-**로그인한 회원이 `모의지원 결과 확인`을 누르면 분석이 시작되고, 이용 흐름 페이지가 별도 팝업으로 열립니다.** 브라우저에서 팝업을 허용하면 두 화면을 함께 볼 수 있습니다.
-
-| 화면 | 보여주는 정보 | 구성 의도 |
-| --- | --- | --- |
-| 분석 진행 화면 | 분석 중 모션, 서버가 전달한 진행률·현재 단계 | 사용자가 기다리는 이유와 현재 상태를 이해 |
-| 이용 흐름 팝업 | 연결된 작업의 행동·요청·응답·처리 단계 | 사용자의 동작이 처리 과정으로 이어지는 모습을 확인 |
-| 완료 전환 | 분석과 저장이 끝난 상태 | 선택한 분석의 보고서로 이동 |
-
-분석 접수 직후에는 대기 상태를 표시하고, 이후 서버의 진행 정보를 주기적으로 조회해 갱신합니다. 수치가 없는 단계는 **확인 중**으로 안내합니다. 진행률은 분석 처리 상태이며 평가 점수와는 구분됩니다.
-
-이용 흐름은 HTML·CSS·JavaScript와 SVG·Canvas로 구성했습니다. 본 화면에서 관찰한 요청·응답과 서버가 전달한 단계를 팝업에 연결하며, 선택한 브라우저 작업의 흐름을 확인하는 화면입니다.
-
-**현재 비회원 동작:** 팀 통합 진입점에서는 비회원 분석 기능이 비활성화되어 있습니다. 비회원 상태로 분석을 시도하면 연결 불가 안내가 표시되므로, 로그인 후 분석을 진행합니다. 로그인 뒤 임시 분석 결과를 자동으로 열어 주는 경로는 현재 팀 배포 기능으로 설명하지 않습니다.
-
-### 06. 보고서 · 이유와 근거를 읽고 보완점 찾기
-
-![실제 팀 분석 보고서와 네 평가축 점수](assets/screenshots/10-result.png)
-
-| 화면 영역 | 기능 | 사용자가 얻는 정보 |
-| --- | --- | --- |
-| 공고·핵심 요약 | 어떤 공고에 대한 결과인지 안내 | 보고서의 대상과 핵심 의견 |
-| 네 가지 평가 영역 | 이력서 완성도·직무 적합도·지원 자격 충족도·실무 경쟁력 표시 | 어느 부분을 더 살펴볼지 판단 |
-| 세부 항목 | 점수와 이유, 원문 인용, 보완 내용 연결 | 내 경험이 어떻게 반영되었는지 확인 |
-| 저장 보고서 사이드바 | 이전 결과 선택 | 재분석 없이 기존 보고서 다시 읽기 |
-
-일반 회원의 DB 저장 보고서 삭제는 현재 지원하지 않습니다.
-
-현재 열어둔 보고서는 **초록색 테두리와 ‘현재 보고서’ 표시**로 구분합니다. 목록의 순서와 읽던 위치를 유지해 다른 결과를 확인하고 돌아오기 쉽도록 구성했습니다.
-
-<details>
-<summary>평가 상세와 저장 보고서 사이드바 보기</summary>
-
-![저장된 평가 판정과 상태 설명](assets/screenshots/11-report-detail.png)
-
-![저장한 보고서 사이드바](assets/screenshots/12-report-sidebar.png)
-
-</details>
-
-### 07. 마이페이지 · 저장된 결과 관리
-
-![팀 마이페이지와 주요 이동 버튼](assets/screenshots/13-mypage.png)
-
-<details>
-<summary>저장 보고서 검색·필터·목록 보기</summary>
-
-![보고서 검색과 상태 필터](assets/screenshots/14-saved-filter.png)
-
-![저장 보고서 카드 목록](assets/screenshots/15-saved-cards.png)
-
-</details>
-
-| 화면 요소 | 기능 | 사용자가 확인하는 결과 |
-| --- | --- | --- |
-| 계정 정보 | 이름·이메일 표시 | 현재 이용 중인 계정 |
-| 보고서 목록·검색·필터 | 저장한 분석 조회 | 다시 읽을 보고서 찾기 |
-| 더 불러오기 | 이전 기록 추가 조회 | 저장된 결과 다시 확인 |
-| 대시보드 진입 | 실행 기록 화면 열기 | 분석 이력의 상태와 상세 확인 |
-
-### 08. 대시보드 · 필요한 기록을 한눈에
-
-![팀 회원 실행 대시보드와 조회 조건](assets/screenshots/16-dashboard.png)
-
-로그인한 회원이 자신의 분석 실행 기록을 확인하도록 **목록 → 선택 → 상세 확인** 순서로 UI를 구성했습니다. 기간·상태 필터와 새로고침으로 확인할 기록을 좁힐 수 있습니다.
-
-| 화면 요소 | 표시하는 내용 | 읽기 쉽게 만든 부분 |
-| --- | --- | --- |
-| 실행 현황·목록 | 실행 ID, 상태, 생성 시각, 전체 소요, 측정 단계 수 | 여러 기록을 표로 비교 |
-| 선택한 실행 | 해당 실행의 상세 기록 | 선택 행을 강조해 현재 대상을 구분 |
-| 입력·재현 | 이력서·공고 식별자, 모델·버전 등 제공된 정보 | 분석에 사용된 정보를 묶어서 표시 |
-| 주제별 상세 | 단계·노드·도구, 검증·재시도, 점수·보고서 저장, LLM 사용량 등 | 필요한 영역만 접고 펼쳐 확인 |
-
-상태는 색과 글자로 구분하고, 기록되지 않은 시간은 **미측정**으로 표시합니다. 기록을 생성하고 결과로 연결하는 과정은 아래 백엔드 구조와 이어집니다.
-
-<details>
-<summary>실행 목록과 개별 실행 상세 보기</summary>
-
-![본인 실행 목록과 소요 시간](assets/screenshots/17-dashboard-runs.png)
-
-![선택한 실행의 입력·모델·기록 정보](assets/screenshots/18-dashboard-detail.png)
-
-</details>
-
-### 09. 이용 흐름 · 단계와 이벤트를 연결해서 보기
-
-작업 창의 행동·API 요청·분석·데이터 저장을 연결해서 살펴보는 별도 페이지입니다. 연결된 창에서는 허용된 상태 메타데이터를 관찰하고, 내장 시연에서는 성공·실패·취소의 예시 경로를 재생합니다.
-
-**아래 캡처는 내장 시연 모드입니다. 시간·로그·진행률은 가상 데이터이며 실제 서버 성능이나 비회원 기능 제공의 증거가 아닙니다.**
-
-![이용 흐름 페이지의 모드와 시연 선택](assets/screenshots/19-flow-controls.png)
-
-<details>
-<summary>흐름 지도·이벤트 로그·단계 상세 보기</summary>
-
-![이용 흐름의 가상 이벤트 지도](assets/screenshots/20-flow-map.png)
-
-![이용 흐름의 가상 이벤트 로그와 응답 시간](assets/screenshots/21-flow-log.png)
-
-</details>
+현재 연결은 동일 출처의 대시보드 주소를 `target="_blank"`, `rel="opener"`로 열고, 프론트엔드는 `sessionStorage`에 보관한 인증 토큰으로 세션을 확인합니다. 최초 주소 진입은 이메일 로그인으로 안내하고, 로그인 뒤에는 이력서 준비로 이동합니다. 이번 촬영에서는 인증된 이용 흐름 창의 대시보드 링크로 새 창을 열었을 때 재로그인 없이 회원 표시와 본인 실행 기록이 나타나는 범위를 확인했습니다. 장기간의 세션 유지나 전체 기능의 회귀 시험까지 확인한 결과는 아닙니다.
 
 ---
-
 
 <a id="backend"></a>
 
@@ -494,7 +417,7 @@ A=68.89, B=81, C=100, D=64인 예시:
 | 항목 | 팀 저장소의 설정 |
 | --- | --- |
 | **서비스 주소** | [agentservice-team3.onrender.com](https://agentservice-team3.onrender.com/) |
-| **배포 기준 파일** | [`blueprints/team3.yaml`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/blueprints/team3.yaml) |
+| **배포 기준 파일** | [`blueprints/team3.yaml`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/blueprints/team3.yaml) |
 | **Render 프로젝트 / 환경** | `aio2-team3` / `production` |
 | **웹 서비스 / DB** | `agentservice-team3` / `agent-db-team3` |
 | **Python** | 3.13 · `.python-version` |
@@ -512,7 +435,7 @@ Render 구성은 Python 웹 서버, 내부 분석 Worker, PostgreSQL 연결을 �
 
 - **팀 배포:** `blueprints/team3.yaml`을 기준으로 합니다. 루트의 `render.yaml`은 독립 워크스페이스용 대안이므로 팀 서비스 이름·주소와 혼용하지 않습니다.
 - **통합 화면 서버:** `app/main.py`가 Flask를 직접 마운트하므로 별도 `BACKEND_URL` 프록시 경로가 필요하지 않습니다.
-- **회원 저장소:** PostgreSQL 연결, 스키마 및 체크포인트 준비가 필요합니다. 준비 절차는 [`docs/backend-implementation.md`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/docs/backend-implementation.md)에 있습니다.
+- **회원 저장소:** PostgreSQL 연결, 스키마 및 체크포인트 준비가 필요합니다. 준비 절차는 [`docs/backend-implementation.md`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/docs/backend-implementation.md)에 있습니다.
 - **선택적 비회원 모듈:** 저장소에는 Flask·SQLite·스레드 풀을 사용하는 별도 비회원 엔진도 있습니다. 현재 팀 통합 진입점은 이 실분석 경로를 비활성화합니다. 이를 활성화하더라도 회원용 PostgreSQL 체크포인트를 쓰지 않으며, 계정 연결만으로 결과가 PostgreSQL로 이전되지 않습니다.
 
 </details>
@@ -567,25 +490,26 @@ AI와 외부 전문가의 조언을 적극 활용해 프론트엔드 구현에 �
 ## 참고 자료와 구현 근거
 
 - [현행 아키텍처와 실행 흐름](docs/architecture.md): 전체 구성·평가 분기·State·저장·종료 조건·배포 경계
+- [팀 1~3일차 작업 기록](https://docs.google.com/document/d/1m4Od4s3NTmhs-xs_vCmlDW5nDuRy3vrPIG8vFzWLg-s/edit?tab=t.b6qs2piep0mg) · [팀원 GitHub 주소 기록](https://docs.google.com/document/d/1m4Od4s3NTmhs-xs_vCmlDW5nDuRy3vrPIG8vFzWLg-s/edit?tab=t.whmuc795y56q)
 
 - [팀 에이전트 아키텍처 설계서](https://yleeylee.notion.site/CareerLens-d5d2b0d658a6822aa5478173218a475b): 업무 구성, 평가 흐름, 조건별 처리, 계산, 공유 상태, 기억·복구, 입력량 관리, 중복 방지, 접근 경계
 - [프로젝트 팀 문서](https://yleeylee.notion.site/CareerLens-3f62b0d658a6804885d1c5fbfcc764f1): 프로젝트 소개와 팀 배포 주소
 - [기획서](https://yleeylee.notion.site/c6c2b0d658a683f4b85b012fd8cb1753) · [요구사항](https://yleeylee.notion.site/fb62b0d658a68254835b015794d50006)
-- [화면설계서 v3](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/frontend/docs/design/v3/CareerLens_프로젝트2_화면설계서_v3_20261013.pptx)
+- [화면설계서 v3](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/frontend/docs/design/v3/CareerLens_프로젝트2_화면설계서_v3_20261013.pptx)
 
 <details>
-<summary>설명별 코드 위치 · 확인 기준 2026-10-14 / caccade</summary>
+<summary>설명별 코드 위치 · 확인 기준 2026-10-15 / 8b26c79</summary>
 
 | 확인한 내용 | 코드 |
 | --- | --- |
-| 팀 Render 배포와 통합 프로세스 | [`blueprints/team3.yaml`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/blueprints/team3.yaml), [`app/main.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/main.py) |
-| 화면 서버·분석 연결 | [`frontend/server.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/frontend/server.py), [`backend-adapter.js`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/frontend/src/shared/api/backend-adapter.js) |
-| 인증·소유권·분석 접수·대시보드 API | [`app/api/v1/routes/api.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/api/v1/routes/api.py) |
-| 7개 노드·State·검색·검토 | [`app/agent/graphs/matching.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/agent/graphs/matching.py) |
-| 평가 항목과 비중·점수 계산 | [`rubric.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/modules/analysis/scoring/rubric.py), [`calculator.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/modules/analysis/scoring/calculator.py) |
-| 준비·체크포인트·최종 저장 | [`app/application/evaluation.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/application/evaluation.py), [`workers/evaluation.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/workers/evaluation.py) |
-| 모델 형식·사용량·기본 제한 | [`app/integrations/llm/client.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/integrations/llm/client.py), [`app/core/config.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/core/config.py) |
-| PostgreSQL 저장·배포 준비 | [`docs/backend-implementation.md`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/docs/backend-implementation.md), [`app/infrastructure/database/postgres.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/caccadedbeb102dd94cdd8bd42ae029f60f4f957/app/infrastructure/database/postgres.py) |
+| 팀 Render 배포와 통합 프로세스 | [`blueprints/team3.yaml`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/blueprints/team3.yaml), [`app/main.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/main.py) |
+| 화면 서버·분석 연결 | [`frontend/server.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/frontend/server.py), [`backend-adapter.js`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/frontend/src/shared/api/backend-adapter.js) |
+| 인증·소유권·분석 접수·대시보드 API | [`app/api/v1/routes/api.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/api/v1/routes/api.py) |
+| 7개 노드·State·검색·검토 | [`app/agent/graphs/matching.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/agent/graphs/matching.py) |
+| 평가 항목과 비중·점수 계산 | [`rubric.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/modules/analysis/scoring/rubric.py), [`calculator.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/modules/analysis/scoring/calculator.py) |
+| 준비·체크포인트·최종 저장 | [`app/application/evaluation.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/application/evaluation.py), [`workers/evaluation.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/workers/evaluation.py) |
+| 모델 형식·사용량·기본 제한 | [`app/integrations/llm/client.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/integrations/llm/client.py), [`app/core/config.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/core/config.py) |
+| PostgreSQL 저장·배포 준비 | [`docs/backend-implementation.md`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/docs/backend-implementation.md), [`app/infrastructure/database/postgres.py`](https://github.com/encore-ai-campus/aio-02-p2-team3/blob/8b26c797231d744711749d2c456cd3dbb72afe8d/app/infrastructure/database/postgres.py) |
 
 설계 문서와 차이가 있는 부분은 위 코드와 **팀 Blueprint**를 우선했습니다. Notion 원본 이미지는 설계 참고 자료로 구분했습니다. 코드에 남아 있는 SQL 설계의 테이블·정책 개수를 곧바로 팀 운영 DB의 적용·검증 결과로 제시하지 않습니다.
 
