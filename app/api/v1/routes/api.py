@@ -51,7 +51,7 @@ async def owned(db, table, ident, uid):
 
 class Credentials(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    password: SecretStr = Field(min_length=8)
+    password: SecretStr = Field(min_length=4, max_length=128)
 
     @field_validator('email')
     @classmethod
@@ -64,7 +64,7 @@ class Credentials(BaseModel):
 
 
 class SignupCredentials(Credentials):
-    password: SecretStr = Field(min_length=4)
+    pass
 
 
 class EvaluationRequest(BaseModel):
