@@ -16,7 +16,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Credentials"
+                "$ref": "#/components/schemas/SignupCredentials"
               }
             }
           },
@@ -1026,6 +1026,26 @@
           "password"
         ],
         "title": "Credentials"
+      },
+      "SignupCredentials": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 4,
+            "format": "password",
+            "title": "Password",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": ["email", "password"],
+        "title": "SignupCredentials"
       },
       "CriterionView": {
         "properties": {

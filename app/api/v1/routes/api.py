@@ -63,13 +63,17 @@ class Credentials(BaseModel):
         return value
 
 
+class SignupCredentials(Credentials):
+    password: SecretStr = Field(min_length=4)
+
+
 class EvaluationRequest(BaseModel):
     resume_id: UUID
     job_posting_id: UUID
 
 
 @router.post('/auth/signup', status_code=201, tags=['auth'])
-async def signup(body: Credentials, request: Request):
+async def signup(body: SignupCredentials, request: Request):
     db, _, _ = services(request)
     try:
         hashed = await asyncio.to_thread(password_hasher.hash, body.password.get_secret_value())

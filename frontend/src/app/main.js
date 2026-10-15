@@ -611,7 +611,7 @@ function render({ reportBridge } = {}) {
   if (reportBridge) app.dataset.reportTransition = 'forming';
   stopCatalogLoad();
   stopResumeExamples();
-  let page = location.hash.replace(/^#\//, '') || (resetToken ? 'reset' : 'intro');
+  let page = location.hash.replace(/^#\//, '') || (resetToken ? 'reset' : 'email');
   // Keep saved links to the former role-selection route working.
   if (page === 'job') page = 'desired-role';
   // Supplemental questions were removed. Old links reopen the selected posting or report.
@@ -634,11 +634,11 @@ function render({ reportBridge } = {}) {
     !authPages.has(page) &&
     !catalog &&
     !opportunities &&
-    !['intro', 'resume', 'desired-role', 'result'].includes(page)
+    !['resume', 'desired-role', 'result'].includes(page)
   )
     page = 'login';
-  if (session.user && authPages.has(page) && page !== 'reset')
-    page = workspace.draft.report ? 'result' : 'resume';
+  if (session.user && (authPages.has(page) || page === 'intro') && page !== 'reset')
+    page = 'resume';
   if (!session.user && page === 'result') {
     if (!workspace.draft.resume_attached) page = 'resume';
     else if (!workspace.draft.report_locked) {
@@ -1688,6 +1688,8 @@ async function start() {
         return;
       }
     }
+    if (!session.user && !location.hash && !resetToken)
+      history.replaceState({}, '', `${location.pathname}${location.search}#/email`);
     render();
     if (callbackMessage)
       notice(

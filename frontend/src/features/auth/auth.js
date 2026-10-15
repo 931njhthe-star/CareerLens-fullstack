@@ -20,7 +20,7 @@ const screens = {
   reset: ['새 비밀번호 설정', '새로 사용할 비밀번호를 입력해 주세요.'],
 };
 
-function renderEmailField() {
+function renderEmailField(page) {
   return `
     <div class="field">
       <label for="auth-email">이메일</label>
@@ -30,6 +30,7 @@ function renderEmailField() {
         name="email"
         autocomplete="email"
         maxlength="254"
+        ${page === 'email' ? 'value="test@example.com"' : ''}
         required
         placeholder="name@example.com" />
     </div>
@@ -46,7 +47,7 @@ function renderPasswordField(page) {
           name="password"
           type="password"
           autocomplete="${page === 'email' ? 'current-password' : 'new-password'}"
-          ${page === 'email' ? '' : 'minlength="8" aria-describedby="password-hint"'}
+          ${page === 'email' ? '' : 'minlength="4" aria-describedby="password-hint"'}
           maxlength="128"
           required />
         <button
@@ -64,7 +65,7 @@ function renderPasswordField(page) {
             <p
               class="input-hint"
               id="password-hint">
-              8자 이상, 128자 이하로 입력해 주세요.
+              4자 이상, 128자 이하로 입력해 주세요.
             </p>
           `
       }
@@ -125,7 +126,7 @@ function renderSocialLogin(session) {
 }
 
 function renderCredentialsForm(page, session, showAlternativeMethods = true) {
-  const emailField = renderEmailField();
+  const emailField = renderEmailField(page);
   const passwordField = renderPasswordField(page);
   return `
     <form
@@ -180,7 +181,7 @@ function renderCredentialsForm(page, session, showAlternativeMethods = true) {
 }
 
 function renderForgotPassword(session) {
-  const emailField = renderEmailField();
+  const emailField = renderEmailField('forgot');
   return `
     <form
       id="auth-form"
