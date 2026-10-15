@@ -2507,21 +2507,86 @@ progress::-moz-progress-bar {
   margin-top: 4px;
 }
 .resume-examples {
-  margin: 0 46px 24px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 16px 20px;
+  margin: 0 46px 28px;
+  border: 1px solid #bfd0ff;
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  background: linear-gradient(115deg, #f0f4ff 0%, #f8faff 58%, #fff 100%);
+  box-shadow: 0 10px 28px rgb(37 83 220 / 9%);
 }
 .resume-examples summary {
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 650;
+  list-style: none;
+  min-height: 112px;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
-.resume-examples summary span {
+.resume-examples summary::-webkit-details-marker {
+  display: none;
+}
+.resume-examples summary::before {
+  content: "✦";
+  display: grid;
+  place-items: center;
+  flex: 0 0 48px;
+  height: 48px;
+  border-radius: 14px;
+  color: #2455db;
+  background: #dfe8ff;
+  font-size: 22px;
+}
+.resume-examples-copy {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+.resume-examples-eyebrow {
+  color: #315bd0;
   font-size: 11px;
-  color: var(--muted);
-  font-weight: normal;
-  margin-left: 10px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+.resume-examples-copy strong {
+  color: #18284f;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.resume-examples-description {
+  color: #5d6b88;
+  font-size: 12px;
+}
+.resume-examples-cta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 17px;
+  border-radius: 10px;
+  color: white;
+  background: #2858df;
+  box-shadow: 0 5px 12px rgb(40 88 223 / 22%);
+  font-size: 13px;
+  font-weight: 700;
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+.resume-examples summary:hover .resume-examples-cta {
+  background: #1948c9;
+  transform: translateY(-1px);
+}
+.resume-examples summary:focus-visible {
+  outline: 3px solid #2455db;
+  outline-offset: -4px;
+}
+.resume-examples[open] summary {
+  border-bottom: 1px solid #d9e2fa;
+}
+.resume-examples > .input-hint,
+.resume-examples > #resume-example-list {
+  margin: 16px 20px;
 }
 .resume-example-grid {
   display: grid;
@@ -2695,6 +2760,26 @@ progress::-moz-progress-bar {
   .selected-posting-banner {
     margin-left: 21px;
     margin-right: 21px;
+  }
+  .resume-examples summary {
+    min-height: 0;
+    padding: 17px;
+    gap: 12px;
+  }
+  .resume-examples summary::before {
+    flex-basis: 40px;
+    height: 40px;
+  }
+  .resume-examples-copy strong {
+    font-size: 15px;
+  }
+  .resume-examples-description {
+    max-width: 38ch;
+    line-height: 1.5;
+  }
+  .resume-examples-cta {
+    padding: 10px 12px;
+    font-size: 12px;
   }
 }
 @media (max-width: 520px) {

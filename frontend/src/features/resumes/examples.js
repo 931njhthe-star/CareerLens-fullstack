@@ -69,8 +69,12 @@ export function resumeExamplesPanel() {
       class="resume-examples"
       id="resume-examples">
       <summary>
-        가상 이력서로 체험하기
-        <span>직무별 검색 · 무작위 선택</span>
+        <span class="resume-examples-copy">
+          <span class="resume-examples-eyebrow">처음이라면 예시로 시작해 보세요</span>
+          <strong>가상 이력서로 먼저 체험하기</strong>
+          <span class="resume-examples-description">직무별 가상 이력서를 골라 분석 흐름을 바로 확인할 수 있어요.</span>
+        </span>
+        <span class="resume-examples-cta">가상 이력서 둘러보기 <span aria-hidden="true">→</span></span>
       </summary>
       <p class="input-hint">
         학습용으로 새로 작성한 가상 인물과 경력입니다. 선택하면 내 계정의 이력서에 저장됩니다.
