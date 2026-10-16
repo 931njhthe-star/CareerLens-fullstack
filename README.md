@@ -37,7 +37,7 @@
 
 | 이름 | 역할 | 담당 내용 | GitHub |
 | --- | --- | --- | --- |
-| **노지훈** | Core Backend Engineer | AI 에이전트 평가 흐름, 점수 산정·판정 기준 개선, 백엔드·DB 연동 및 서비스 통합·배포 | [hun0425](https://github.com/931njhthe-star) |
+| **노지훈** | Core Backend Engineer | AI 에이전트 평가 흐름, 점수 산정·판정 기준 개선, 백엔드·DB 연동 및 서비스 통합·배포 | [931njhthe-star](https://github.com/931njhthe-star) |
 | **신영석** | Frontend Software Architect | 프론트엔드 UI·화면 설계, 배포 설정, 대시보드 UI, 발표 전반부 준비, 노션 문서 지원 및 통합 저장소 README 작성 | [WithAndWithout0094](https://github.com/WithAndWithout0094) |
 | **백승주** | Backend/Data Engineer | DB 설계·연동과 데이터 처리, 팀 일정 관리, 기획서·PRD·평가 기준 등 문서 6종 보완, 가상 이력서 자료 제작 | [seungjuubaek-b](https://github.com/seungjuubaek-b) |
 | **성관현** | Project Manager | 의견 조율·역할 배분·산출물 관리, 아키텍처 설계서와 평가 기준별 검수 도해 정리, 실행 구조·배포 조건 확인 | [tsurien](https://github.com/tsurien) |
