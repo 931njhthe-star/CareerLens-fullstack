@@ -1,5 +1,5 @@
 # CareerLens
-4-Way Parallel Evaluation
+AI 기반 이력서·채용공고 매칭 및 분석 플랫폼 (4-Way Parallel Evaluation)
 
 ### 내 경험을 공고에 비춰 보고, 다음 보완점을 찾다
 
