@@ -2,6 +2,23 @@
 
 ### AI 기반 이력서·채용공고 매칭 및 분석 플랫폼 (4-Way Parallel Evaluation)
 
+LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 총 12개 항목을 분석**하고 검증·조건부 재평가를 거쳐 직무 적합도 보고서를 생성합니다.
+
+### My Contributions
+
+**AI Architecture · Backend · Database · Deployment**
+
+- **AI Architecture:** LangGraph 기반 4-Way 병렬 평가 및 조건부 재평가 구조 설계
+- **Evaluation System:** 12개 평가 항목 및 가중 멱평균(p=0.5) 점수 체계 설계
+- **Database:** PostgreSQL 기반 데이터 모델 및 평가 결과 저장 구조 설계·연동
+- **Backend Integration:** FastAPI 기반 AI 분석 시스템 통합
+- **Deployment:** 서비스 통합, 배포 및 인증·연동 오류 해결
+
+### System Architecture
+
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
+
+
 ## 프로젝트 소개
 
 **CareerLens는 이력서와 사용자가 선택한 채용공고를 비교해, 평가 이유·원문 근거·보완 방향을 함께 보여주는 AI 모의지원 서비스입니다.**
