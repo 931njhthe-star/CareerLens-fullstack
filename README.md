@@ -1,7 +1,6 @@
 # CareerLens
-AI 기반 이력서·채용공고 매칭 및 분석 플랫폼 (4-Way Parallel Evaluation)
 
-### 내 경험을 공고에 비춰 보고, 다음 보완점을 찾다
+### AI 기반 이력서·채용공고 매칭 및 분석 플랫폼 (4-Way Parallel Evaluation)
 
 ## 프로젝트 소개
 
