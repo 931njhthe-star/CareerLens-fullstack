@@ -3,7 +3,8 @@
 ### AI 기반 이력서·채용공고 매칭 및 분석 플랫폼 (4-Way Parallel Evaluation)
 
 LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 총 12개 항목을 분석**하고 검증·조건부 재평가를 거쳐 직무 적합도 보고서를 생성합니다.
-<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
+
+<img width="1024" height="768" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
 
 ### My Contributions
 
