@@ -16,13 +16,13 @@ LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 �
 - **Backend Integration:** FastAPI 기반 AI 분석 시스템 통합
 - **Deployment:** 서비스 통합, 배포 및 인증·연동 오류 해결
 
-### 일반 사용자 · 지원할 공고와 내 경험을 연결하기
+### CareerLens AI Evaluation Architecture
 <img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
 
-### 일반 사용자 · 지원할 공고와 내 경험을 연결하기
+### CareerLens Data Processing & Monitoring Architecture
 <img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/9e9c3b09-ceb8-4cf0-aee7-d5dee5059f01" />
 
-### 일반 사용자 · 지원할 공고와 내 경험을 연결하기
+### CareerLens Asynchronous Analysis & Real-Time Monitoring Flow
 <img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/b3f321c3-ee76-4bbb-926c-dae8ad9ff44c" />
 
 
