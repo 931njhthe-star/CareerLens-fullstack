@@ -18,6 +18,9 @@ LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 �
 
 <img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
 
+<img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/9e9c3b09-ceb8-4cf0-aee7-d5dee5059f01" />
+
+
 ## 프로젝트 소개
 
 **CareerLens는 이력서와 사용자가 선택한 채용공고를 비교해, 평가 이유·원문 근거·보완 방향을 함께 보여주는 AI 모의지원 서비스입니다.**
