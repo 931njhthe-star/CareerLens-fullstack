@@ -4,7 +4,7 @@
 
 LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 총 12개 항목을 분석**하고 검증·조건부 재평가를 거쳐 직무 적합도 보고서를 생성합니다.
 
-**[팀 서비스 바로가기 · Render](https://agentservice-team3.onrender.com/)** · [팀 통합 저장소](https://github.com/encore-ai-campus/aio-02-p2-team3)
+**[팀 서비스 바로가기 · Render](https://agentservice-team3.onrender.com/)**
 
 ### My Contributions
 
