@@ -6,8 +6,6 @@ LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 �
 
 **[팀 서비스 바로가기 · Render](https://agentservice-team3.onrender.com/)** · [팀 통합 저장소](https://github.com/encore-ai-campus/aio-02-p2-team3)
 
-<img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
-
 ### My Contributions
 
 **AI Architecture · Backend · Database · Deployment**
@@ -17,6 +15,8 @@ LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 �
 - **Database:** PostgreSQL 기반 데이터 모델 및 평가 결과 저장 구조 설계·연동
 - **Backend Integration:** FastAPI 기반 AI 분석 시스템 통합
 - **Deployment:** 서비스 통합, 배포 및 인증·연동 오류 해결
+
+<img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
 
 ## 프로젝트 소개
 
