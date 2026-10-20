@@ -4,6 +4,8 @@
 
 LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 총 12개 항목을 분석**하고 검증·조건부 재평가를 거쳐 직무 적합도 보고서를 생성합니다.
 
+**[팀 서비스 바로가기 · Render](https://agentservice-team3.onrender.com/)** · [팀 통합 저장소](https://github.com/encore-ai-campus/aio-02-p2-team3)
+
 <img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/de503747-586d-4a7f-b326-cc73c8ef113e" />
 
 ### My Contributions
@@ -25,8 +27,6 @@ LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 �
 프로젝트 2에서는 프론트엔드, 분석 API, 데이터베이스와 AI 평가 흐름을 연결해 이력서 준비부터 분석 요청, 진행 상태 확인, 저장 보고서 조회까지 이어지는 서비스를 구현했습니다. 현재 공고는 교육·시연용 모의자료이며, 평가 점수는 합격 확률이나 실제 지원자 순위를 의미하지 않습니다.
 
 프로젝트 2 · 프론트엔드와 백엔드를 연결한 통합 서비스
-
-**[팀 서비스 바로가기 · Render](https://agentservice-team3.onrender.com/)** · [팀 통합 저장소](https://github.com/encore-ai-campus/aio-02-p2-team3)
 
 이 문서는 배포 담당자의 **`encore-ai-campus/aio-02-p2-team3`** 코드와 팀 배포 설정인 **`blueprints/team3.yaml`**을 기준으로 작성했습니다. 개인 배포 환경의 설정은 포함하지 않습니다.
 
