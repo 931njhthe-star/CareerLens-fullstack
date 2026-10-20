@@ -20,6 +20,9 @@ LangGraph 기반 병렬 AI 평가 시스템으로, **4개 평가 노드에서 �
 
 <img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/9e9c3b09-ceb8-4cf0-aee7-d5dee5059f01" />
 
+<img width="768" height="512" alt="image" src="https://github.com/user-attachments/assets/b3f321c3-ee76-4bbb-926c-dae8ad9ff44c" />
+
+
 
 ## 프로젝트 소개
 
